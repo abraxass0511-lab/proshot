@@ -22,6 +22,61 @@ const STYLE_PROMPTS: Record<string, string> = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Helper: Call Gemini model for image generation                     */
+/* ------------------------------------------------------------------ */
+
+async function generateWithModel(
+  ai: GoogleGenAI,
+  modelName: string,
+  style: string,
+  mimeType: string,
+  base64Data: string,
+): Promise<string> {
+  const result = await ai.models.generateContent({
+    model: modelName,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: STYLE_PROMPTS[style] },
+          {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          },
+        ],
+      },
+    ],
+    config: {
+      responseModalities: ["IMAGE", "TEXT"],
+    },
+  });
+
+  const parts = result.candidates?.[0]?.content?.parts;
+  if (!parts || parts.length === 0) {
+    throw new Error(`${modelName}: output parts empty`);
+  }
+
+  let outputMime = "image/png";
+  let outputBase64 = "";
+
+  for (const part of parts) {
+    if (part.inlineData?.data) {
+      outputMime = part.inlineData.mimeType || "image/png";
+      outputBase64 = part.inlineData.data;
+      break;
+    }
+  }
+
+  if (!outputBase64) {
+    throw new Error(`${modelName}: no image in output`);
+  }
+
+  return `data:${outputMime};base64,${outputBase64}`;
+}
+
+/* ------------------------------------------------------------------ */
 /*  POST handler                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -37,9 +92,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { imageBase64, style } = body as {
+    const { imageBase64, style, targetModel = "compare" } = body as {
       imageBase64?: string;
       style?: string;
+      targetModel?: string; // "gemini-3.1-flash-image" | "gemini-2.0-flash-exp" | "compare"
     };
 
     if (!imageBase64 || typeof imageBase64 !== "string") {
@@ -68,77 +124,51 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Never log or persist the user's BYOK key
-
     /* ---- Initialize Gemini client ---- */
     const ai = new GoogleGenAI({ apiKey });
 
     /* ---- Strip data-URL prefix ---- */
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
-
-    // Detect mime type from data URL prefix
     const mimeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
-    /* ---- Call Gemini with image input → image output ---- */
-    const result = await ai.models.generateContent({
-      model: "gemini-2.0-flash-exp",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: STYLE_PROMPTS[style] },
-            {
-              inlineData: {
-                mimeType,
-                data: base64Data,
-              },
-            },
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ["IMAGE", "TEXT"],
-      },
-    });
+    if (targetModel === "compare") {
+      /* ---- Compare mode: run both models in parallel ---- */
+      const [res31, res20] = await Promise.allSettled([
+        generateWithModel(ai, "gemini-3.1-flash-image", style, mimeType, base64Data),
+        generateWithModel(ai, "gemini-2.0-flash-exp", style, mimeType, base64Data),
+      ]);
 
-    /* ---- Extract output image ---- */
-    const parts = result.candidates?.[0]?.content?.parts;
-    if (!parts || parts.length === 0) {
-      return NextResponse.json(
-        { error: "이미지 생성에 실패했습니다. 다시 시도해 주세요." },
-        { status: 500 },
-      );
-    }
+      const imageUrl31 = res31.status === "fulfilled" ? res31.value : null;
+      const imageUrl20 = res20.status === "fulfilled" ? res20.value : null;
 
-    // Find the image part in the response
-    let outputMime = "image/png";
-    let outputBase64 = "";
-
-    for (const part of parts) {
-      if (part.inlineData?.data) {
-        outputMime = part.inlineData.mimeType || "image/png";
-        outputBase64 = part.inlineData.data;
-        break;
+      if (!imageUrl31 && !imageUrl20) {
+        return NextResponse.json(
+          { error: "두 모델 모두 이미지 생성에 실패했습니다. 다른 사진으로 다시 시도해 주세요." },
+          { status: 500 },
+        );
       }
+
+      return NextResponse.json({
+        compareMode: true,
+        imageUrl: imageUrl31 || imageUrl20,
+        imageUrl31,
+        imageUrl20,
+      });
     }
 
-    if (!outputBase64) {
-      return NextResponse.json(
-        { error: "이미지를 생성하지 못했습니다. 다른 사진으로 다시 시도해 주세요." },
-        { status: 500 },
-      );
-    }
+    /* ---- Single model mode ---- */
+    const modelToUse =
+      targetModel === "gemini-2.0-flash-exp"
+        ? "gemini-2.0-flash-exp"
+        : "gemini-3.1-flash-image";
 
-    // Return the generated image as a base64 data URL
-    const imageUrl = `data:${outputMime};base64,${outputBase64}`;
+    const imageUrl = await generateWithModel(ai, modelToUse, style, mimeType, base64Data);
 
-    return NextResponse.json({ imageUrl });
+    return NextResponse.json({ imageUrl, selectedModel: modelToUse });
   } catch (err: unknown) {
-    // Log full error server-side for debugging, never expose to client
     console.error("[generate] Error:", err);
 
-    // Surface a safe Korean message only
     let message = "헤드샷 생성 중 오류가 발생했습니다. 다시 시도해 주세요.";
 
     if (err instanceof Error) {

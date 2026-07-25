@@ -7,6 +7,7 @@ import { useState, useRef, useCallback, useEffect, type ChangeEvent } from "reac
 /* ------------------------------------------------------------------ */
 
 type StyleOption = "corporate" | "studio" | "outdoor";
+type ModelOption = "compare" | "gemini-3.1-flash-image" | "gemini-2.0-flash-exp";
 
 interface StyleCard {
   value: StyleOption;
@@ -77,10 +78,16 @@ export default function UploadCard() {
   const [preview, setPreview] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("");
   const [style, setStyle] = useState<StyleOption>("corporate");
+  const [targetModel, setTargetModel] = useState<ModelOption>("compare");
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
+
+  // Result state
+  const [resultUrl31, setResultUrl31] = useState<string | null>(null);
+  const [resultUrl20, setResultUrl20] = useState<string | null>(null);
+  const [singleResultUrl, setSingleResultUrl] = useState<string | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Demo limit & BYOK state
@@ -168,11 +175,14 @@ export default function UploadCard() {
     setPreview(null);
     setFileName("");
     setError(null);
-    setResultUrl(null);
+    setResultUrl31(null);
+    setResultUrl20(null);
+    setSingleResultUrl(null);
     if (inputRef.current) inputRef.current.value = "";
   };
 
   const isValid = preview !== null && error === null;
+  const hasResults = resultUrl31 || resultUrl20 || singleResultUrl;
 
   /* ---- BYOK helpers ---- */
 
@@ -210,7 +220,9 @@ export default function UploadCard() {
 
     setIsLoading(true);
     setError(null);
-    setResultUrl(null);
+    setResultUrl31(null);
+    setResultUrl20(null);
+    setSingleResultUrl(null);
 
     try {
       const headers: Record<string, string> = {
@@ -224,7 +236,11 @@ export default function UploadCard() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers,
-        body: JSON.stringify({ imageBase64: preview, style }),
+        body: JSON.stringify({
+          imageBase64: preview,
+          style,
+          targetModel,
+        }),
       });
 
       const data = await res.json();
@@ -234,19 +250,24 @@ export default function UploadCard() {
         return;
       }
 
-      if (data.imageUrl) {
-        setResultUrl(data.imageUrl);
-
-        if (!isByok) {
-          try {
-            const stored = localStorage.getItem(LS_USES_KEY);
-            const newCount = (stored ? parseInt(stored, 10) : 0) + 1;
-            localStorage.setItem(LS_USES_KEY, String(newCount));
-            setUsesLeft(Math.max(0, DEMO_LIMIT - newCount));
-          } catch { /* ignore */ }
-        }
+      if (data.compareMode) {
+        setResultUrl31(data.imageUrl31 || null);
+        setResultUrl20(data.imageUrl20 || null);
+      } else if (data.imageUrl) {
+        setSingleResultUrl(data.imageUrl);
       } else {
         setError("\uacb0\uacfc \uc774\ubbf8\uc9c0\ub97c \ubc1b\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \uc2dc\ub3c4\ud574 \uc8fc\uc138\uc694.");
+        return;
+      }
+
+      // Increment demo counter only for non-BYOK requests
+      if (!isByok) {
+        try {
+          const stored = localStorage.getItem(LS_USES_KEY);
+          const newCount = (stored ? parseInt(stored, 10) : 0) + 1;
+          localStorage.setItem(LS_USES_KEY, String(newCount));
+          setUsesLeft(Math.max(0, DEMO_LIMIT - newCount));
+        } catch { /* ignore */ }
       }
     } catch {
       setError("\ub124\ud2b8\uc6cc\ud06c \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4. \uc778\ud130\ub137 \uc5f0\uacb0\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694.");
@@ -269,11 +290,10 @@ export default function UploadCard() {
 
   /* ---- download helper ---- */
 
-  const handleDownload = () => {
-    if (!resultUrl) return;
+  const handleDownloadImage = (url: string, suffix: string) => {
     const link = document.createElement("a");
-    link.href = resultUrl;
-    link.download = "proshot-headshot.png";
+    link.href = url;
+    link.download = `proshot-headshot-${suffix}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -282,20 +302,24 @@ export default function UploadCard() {
   /* ---- action handlers ---- */
 
   const handleRetry = () => {
-    setResultUrl(null);
+    setResultUrl31(null);
+    setResultUrl20(null);
+    setSingleResultUrl(null);
     setError(null);
     handleGenerate();
   };
 
   const handleChangeStyle = () => {
-    setResultUrl(null);
+    setResultUrl31(null);
+    setResultUrl20(null);
+    setSingleResultUrl(null);
     setError(null);
   };
 
   /* ---- render ---- */
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto">
       {/* Error Toast */}
       {toast && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-in">
@@ -323,141 +347,185 @@ export default function UploadCard() {
       <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 shadow-xl shadow-slate-200/40 p-6 sm:p-8 space-y-6">
         {/* Header */}
         <div className="text-center">
-          <h3 className="text-xl font-bold text-slate-900 mb-1">
-            {resultUrl ? "\u2728 \ud5e4\ub4dc\uc0f7 \uc644\uc131!" : "\uc140\uce74\ub97c \uc5c5\ub85c\ub4dc\ud558\uc138\uc694"}
+          <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mb-1">
+            {hasResults ? "\u2728 \ud5e4\ub4dc\uc0f7 \uc644\uc131!" : "\uc140\uce74\ub97c \uc5c5\ub85c\ub4dc\ud558\uc138\uc694"}
           </h3>
           <p className="text-sm text-slate-400">
-            {resultUrl
-              ? "\uc6d0\ubcf8\uacfc AI \ud5e4\ub4dc\uc0f7\uc744 \ube44\uad50\ud574 \ubcf4\uc138\uc694"
+            {hasResults
+              ? "\ubaa8\ub378\ubcc4 \uacb0\uacfc\ub97c \ube44\uad50\ud558\uace0 \ub9c8\uc74c\uc5d0 \ub4dc\ub294 \uc0ac\uc9c4\uc744 \ub2e4\uc6b4\ub85c\ub4dc\ud558\uc138\uc694"
               : "\uc815\uba74 \uc140\uce74 \ud55c \uc7a5\uc774\uba74 \ucda9\ubd84\ud569\ub2c8\ub2e4"}
           </p>
         </div>
 
-        {/* STATE: Result - Before / After View */}
-        {resultUrl && preview ? (
-          <div className="space-y-5 animate-reveal">
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
-              {/* Original */}
-              <div className="space-y-2">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <polyline points="21 15 16 10 5 21" />
-                  </svg>
-                  {"\uc6d0\ubcf8"}
-                </span>
-                <div className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-slate-50 aspect-[3/4]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={preview} alt={"\uc6d0\ubcf8 \uc140\uce74"} className="w-full h-full object-cover" />
+        {/* STATE: Result - Comparison or Single View */}
+        {hasResults && preview ? (
+          <div className="space-y-6 animate-reveal">
+            {/* Grid layout depending on comparison or single mode */}
+            {resultUrl31 && resultUrl20 ? (
+              /* ── 3-Column Comparison View ── */
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 1. Original */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                      {"\uc6d0\ubcf8 \uc140\uce74"}
+                    </span>
+                  </div>
+                  <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover" />
+                  </div>
                 </div>
-              </div>
 
-              {/* AI Headshot */}
-              <div className="space-y-2">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-500 uppercase tracking-wider">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                  </svg>
-                  {"AI \ud5e4\ub4dc\uc0f7"}
-                </span>
-                <div className="rounded-2xl overflow-hidden border-2 border-indigo-100 shadow-md shadow-indigo-50 bg-slate-50 aspect-[3/4]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={resultUrl} alt={"AI \uc0dd\uc131 \ud5e4\ub4dc\uc0f7"} className="w-full h-full object-cover" />
+                {/* 2. Gemini 3.1 Flash Image (New & Recommended) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+                      Gemini 3.1 Flash
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
+                      {"\ucd9c\ucc9c \u00b7 \ucd5c\uc2e0"}
+                    </span>
+                  </div>
+                  <div className="rounded-2xl overflow-hidden border-2 border-indigo-400 shadow-lg shadow-indigo-100/50 bg-slate-50 aspect-[3/4] relative group">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={resultUrl31} alt={"Gemini 3.1 Flash Result"} className="w-full h-full object-cover" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadImage(resultUrl31, "gemini-3.1")}
+                    className="w-full py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm flex items-center justify-center gap-1.5"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    {"3.1 \uacb0\uacfc \ub2e4\uc6b4\ub85c\ub4dc"}
+                  </button>
+                </div>
+
+                {/* 3. Gemini 2.0 Flash Exp (Legacy) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Gemini 2.0 Flash
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
+                      {"\uc2e4\ud5d8\uc6a9"}
+                    </span>
+                  </div>
+                  <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={resultUrl20} alt={"Gemini 2.0 Flash Result"} className="w-full h-full object-cover" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadImage(resultUrl20, "gemini-2.0")}
+                    className="w-full py-2.5 rounded-xl text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    {"2.0 \uacb0\uacfc \ub2e4\uc6b4\ub85c\ub4dc"}
+                  </button>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* ── Single View ── */
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {"\uc6d0\ubcf8"}
+                  </span>
+                  <div className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-slate-50 aspect-[3/4]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-indigo-500 uppercase tracking-wider">
+                    {"AI \ud5e4\ub4dc\uc0f7"}
+                  </span>
+                  <div className="rounded-2xl overflow-hidden border-2 border-indigo-100 shadow-md bg-slate-50 aspect-[3/4]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={singleResultUrl || resultUrl31 || resultUrl20 || ""} alt={"AI 생성 헤드샷"} className="w-full h-full object-cover" />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Action buttons */}
-            <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="button"
-                onClick={handleDownload}
-                className="w-full py-3.5 rounded-2xl text-sm font-bold bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-300/30 hover:shadow-xl hover:shadow-indigo-300/40 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 flex items-center justify-center gap-2"
+                onClick={handleRetry}
+                disabled={isLoading}
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                 </svg>
-                PNG {"\ub2e4\uc6b4\ub85c\ub4dc"}
+                {"\ub2e4\uc2dc \uc0dd\uc131\ud558\uae30"}
               </button>
-
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={handleRetry}
-                  disabled={isLoading}
-                  className="py-3 rounded-xl text-sm font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all duration-200 flex items-center justify-center gap-1.5"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="23 4 23 10 17 10" />
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                  </svg>
-                  {"\ub2e4\uc2dc \uc0dd\uc131"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleChangeStyle}
-                  className="py-3 rounded-xl text-sm font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all duration-200 flex items-center justify-center gap-1.5"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="13.5" cy="6.5" r="2.5" />
-                    <path d="M17 2H7a5 5 0 0 0-5 5v10a5 5 0 0 0 5 5h10a5 5 0 0 0 5-5V7a5 5 0 0 0-5-5z" />
-                  </svg>
-                  {"\uc2a4\ud0c0\uc77c \ubc14\uafb8\uae30"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleChangeStyle}
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold bg-slate-900 text-white hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-md"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="13.5" cy="6.5" r="2.5" />
+                  <path d="M17 2H7a5 5 0 0 0-5 5v10a5 5 0 0 0 5 5h10a5 5 0 0 0 5-5V7a5 5 0 0 0-5-5z" />
+                </svg>
+                {"\uc2a4\ud0c0\uc77c/ 모델 \ubc14\uafb8\uae30"}
+              </button>
             </div>
           </div>
         ) : isLoading ? (
-          /* STATE: Loading - Skeleton */
+          /* STATE: Loading Skeleton */
           <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <div className="h-3 w-10 rounded bg-slate-100" />
+                <div className="h-3 w-12 rounded bg-slate-100" />
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 aspect-[3/4] overflow-hidden">
                   {preview ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover opacity-60" />
+                    <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover opacity-50" />
                   ) : (
                     <div className="w-full h-full animate-pulse bg-slate-100" />
                   )}
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="h-3 w-16 rounded bg-indigo-50" />
-                <div className="rounded-2xl border-2 border-indigo-100 bg-gradient-to-br from-indigo-50/50 to-violet-50/50 aspect-[3/4] flex flex-col items-center justify-center gap-3">
-                  <div className="relative">
-                    <svg className="animate-spin h-8 w-8 text-indigo-400" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  </div>
-                  <div className="text-center px-4">
-                    <p className="text-sm font-semibold text-indigo-500">
-                      {"AI\uac00 \uc0ac\uc9c4\uc744 \ub9cc\ub4dc\ub294 \uc911..."}
+              <div className="space-y-2 sm:col-span-2">
+                <div className="h-3 w-28 rounded bg-indigo-100" />
+                <div className="rounded-2xl border-2 border-indigo-100 bg-gradient-to-br from-indigo-50/50 to-violet-50/50 aspect-[16/9] sm:aspect-auto sm:h-[calc(100%-1.5rem)] flex flex-col items-center justify-center p-6 gap-3">
+                  <svg className="animate-spin h-8 w-8 text-indigo-500" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <div className="text-center">
+                    <p className="text-sm font-bold text-indigo-600">
+                      {targetModel === "compare"
+                        ? "Gemini 3.1과 2.0 두 모델이 사진을 만드난 중..."
+                        : "AI가 헤드샷을 만드는 중..."}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
-                      {"\ucd5c\ub300 1\ubd84 \uc815\ub3c4 \uc18c\uc694\ub429\ub2c8\ub2e4"}
+                      {"\ubaa8\ub378 \ube44\uad50 \uc0dd\uc131 \uc2dc 15~30\ucd08 \uc18c\uc694\ub429\ub2c8\ub2e4"}
                     </p>
                   </div>
-                  <div className="w-3/4 space-y-1.5 mt-2">
-                    <div className="h-1 rounded-full bg-indigo-100 overflow-hidden">
-                      <div className="h-full bg-indigo-400 rounded-full animate-loading-bar" />
-                    </div>
+                  <div className="w-48 h-1 rounded-full bg-indigo-100 overflow-hidden mt-1">
+                    <div className="h-full bg-indigo-500 rounded-full animate-loading-bar" />
                   </div>
                 </div>
               </div>
             </div>
-            <div className="space-y-3">
-              <div className="w-full py-3.5 rounded-2xl bg-slate-100 text-slate-300 text-sm font-bold text-center cursor-not-allowed">
-                {"\uc0dd\uc131 \uc911..."}
-              </div>
-            </div>
           </div>
         ) : (
-          /* STATE: Default - Upload + Style picker */
+          /* STATE: Default - Upload + Model Picker + Style Picker */
           <>
             {/* Upload area */}
             <div
@@ -483,11 +551,11 @@ export default function UploadCard() {
               `}
             >
               {preview ? (
-                <div className="relative aspect-[4/5] flex items-center justify-center p-3">
+                <div className="relative aspect-[4/3] sm:aspect-[16/9] flex items-center justify-center p-4">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={preview}
-                    alt={"\uc5c5\ub85c\ub4dc\ub41c \uc140\uce74 \ubbf8\ub9ac\ubcf4\uae30"}
+                    alt={"\uc5c5\ub85c\ub4dc\ub41c \uc140\uce74"}
                     className="max-h-full max-w-full rounded-xl object-contain shadow-lg"
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -502,7 +570,6 @@ export default function UploadCard() {
                       clearImage();
                     }}
                     className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center text-slate-500 hover:text-red-500 hover:bg-white transition-all duration-200"
-                    aria-label={"\uc0ac\uc9c4 \uc81c\uac70"}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                       <line x1="18" y1="6" x2="6" y2="18" />
@@ -516,9 +583,9 @@ export default function UploadCard() {
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 px-6">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex flex-col items-center justify-center py-10 px-6">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="17 8 12 3 7 8" />
                       <line x1="12" y1="3" x2="12" y2="15" />
@@ -539,8 +606,43 @@ export default function UploadCard() {
                 accept="image/jpeg,image/png,image/webp,image/heic"
                 onChange={handleFileChange}
                 className="hidden"
-                aria-label={"\uc140\uce74 \uc774\ubbf8\uc9c0 \uc120\ud0dd"}
               />
+            </div>
+
+            {/* Model Selection Tabs */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                {"AI \ubaa8\ub378 \uc120\ud0dd"}
+              </label>
+              <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-2xl">
+                {[
+                  { id: "compare", label: "\u26a1 \ub450 \ubaa8\ub378 \ube44\uad50", tag: "\ucd94\ucc9c" },
+                  { id: "gemini-3.1-flash-image", label: "Gemini 3.1 Flash", tag: "\ucd5c\uc2e0" },
+                  { id: "gemini-2.0-flash-exp", label: "Gemini 2.0 Flash", tag: "\uc2e4\ud5d8\uc6a9" },
+                ].map((m) => {
+                  const isSel = targetModel === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setTargetModel(m.id as ModelOption)}
+                      className={`
+                        py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5
+                        ${
+                          isSel
+                            ? "bg-white text-indigo-600 shadow-md shadow-slate-200/50"
+                            : "text-slate-500 hover:text-slate-900 hover:bg-white/50"
+                        }
+                      `}
+                    >
+                      {m.label}
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold ${isSel ? "bg-indigo-100 text-indigo-700" : "bg-slate-200 text-slate-600"}`}>
+                        {m.tag}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Style picker */}
@@ -608,7 +710,7 @@ export default function UploadCard() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
-              {"\ud5e4\ub4dc\uc0f7 \uc0dd\uc131"}
+              {targetModel === "compare" ? "\ub450 \ubaa8\ub378 \ube44\uad50 \uc0dd\uc131" : "\ud5e4\ub4dc\uc0f7 \uc0dd\uc131"}
             </button>
 
             {/* Demo uses indicator */}
@@ -684,7 +786,7 @@ export default function UploadCard() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-slate-900">
-                    {"\ub0b4 API \ud0a4\ub85c \uacc4\uc18d \uc0ac\uc6a9\ud558\uae30"}
+                    {"\ub0b4 API \ud0a4\ub85c \uacc4\uc18d \uc0ac\uc6a9\ud588\uae30"}
                   </p>
                   <p className="text-xs text-slate-400">
                     {"Google Gemini API \ud0a4 \uc785\ub825"}
