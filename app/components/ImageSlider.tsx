@@ -8,6 +8,7 @@ interface ImageSliderProps {
   beforeLabel?: string;
   afterLabel?: string;
   className?: string;
+  afterFilter?: string;
 }
 
 export function ImageSlider({
@@ -16,10 +17,33 @@ export function ImageSlider({
   beforeLabel = "\uc6d0\ubcf8",
   afterLabel = "AI \ud5e4\ub4dc\uc0f7",
   className = "",
+  afterFilter = "",
 }: ImageSliderProps) {
   const [sliderPosition, setSliderPosition] = useState(50); // percentage 0 - 100
   const [isDragging, setIsDragging] = useState(false);
+  const [containerWidth, setContainerWidth] = useState<number>(0);
+
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Keep track of container width for accurate clipping
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+
+    updateWidth();
+
+    const resizeObserver = new ResizeObserver(updateWidth);
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   const handleMove = useCallback((clientX: number) => {
     if (!containerRef.current) return;
@@ -98,30 +122,31 @@ export function ImageSlider({
         src={afterImage}
         alt={afterLabel}
         className="absolute inset-0 w-full h-full object-cover"
+        style={{ filter: afterFilter || undefined }}
       />
 
       {/* ── Before Image (Clipped overlay) ── */}
       <div
-        className="absolute inset-0 overflow-hidden"
+        className="absolute top-0 bottom-0 left-0 overflow-hidden z-10"
         style={{ width: `${sliderPosition}%` }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={beforeImage}
           alt={beforeLabel}
-          className="absolute inset-0 w-full h-full object-cover max-w-none"
-          style={{ width: containerRef.current ? `${containerRef.current.clientWidth}px` : "100%" }}
+          className="absolute top-0 left-0 h-full object-cover max-w-none"
+          style={{ width: containerWidth ? `${containerWidth}px` : "100%" }}
         />
       </div>
 
       {/* ── Label Badges ── */}
-      <div className="absolute top-4 left-4 z-10 pointer-events-none">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-semibold shadow-lg">
+      <div className="absolute top-4 left-4 z-20 pointer-events-none">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-md text-white text-xs font-semibold shadow-lg">
           <span className="w-2 h-2 rounded-full bg-slate-300" />
           {beforeLabel}
         </span>
       </div>
-      <div className="absolute top-4 right-4 z-10 pointer-events-none">
+      <div className="absolute top-4 right-4 z-20 pointer-events-none">
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-600/90 backdrop-blur-md text-white text-xs font-semibold shadow-lg">
           <span className="w-2 h-2 rounded-full bg-indigo-200 animate-pulse" />
           {afterLabel}
@@ -130,7 +155,7 @@ export function ImageSlider({
 
       {/* ── Slider Divider Bar & Handle ── */}
       <div
-        className="absolute top-0 bottom-0 z-20 w-0.5 bg-white shadow-[0_0_10px_rgba(0,0,0,0.5)] transition-transform"
+        className="absolute top-0 bottom-0 z-30 w-0.5 bg-white shadow-[0_0_12px_rgba(0,0,0,0.6)]"
         style={{ left: `${sliderPosition}%` }}
       >
         <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-white text-slate-800 shadow-2xl flex items-center justify-center border-2 border-indigo-500 hover:scale-110 active:scale-95 transition-transform cursor-ew-resize">

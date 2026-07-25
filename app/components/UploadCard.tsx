@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect, type ChangeEvent } from "reac
 import { ImageSlider } from "./ImageSlider";
 
 /* ------------------------------------------------------------------ */
-/*  Types                                                              */
+/*  Types & Sample Data                                                */
 /* ------------------------------------------------------------------ */
 
 type StyleOption = "corporate" | "studio" | "outdoor";
@@ -14,6 +14,7 @@ interface StyleCard {
   value: StyleOption;
   label: string;
   desc: string;
+  filter: string;
   icon: React.ReactNode;
 }
 
@@ -22,6 +23,10 @@ const DEMO_LIMIT = 2;
 const LS_USES_KEY = "proshot_uses";
 const LS_BYOK_KEY = "proshot_byok";
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"];
+
+// Clean sample images for instant pre-upload demo slider
+const SAMPLE_BEFORE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='800' viewBox='0 0 600 800'><rect width='600' height='800' fill='%23e2e8f0'/><circle cx='300' cy='320' r='140' fill='%23cbd5e1'/><circle cx='300' cy='280' r='90' fill='%23fda4af'/><path d='M150,750 C150,500 450,500 450,750 Z' fill='%2394a3b8'/><text x='300' y='720' font-family='sans-serif' font-size='26' font-weight='bold' fill='%23475569' text-anchor='middle'>일반 셀카 샘플</text></svg>";
+const SAMPLE_AFTER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='800' viewBox='0 0 600 800'><defs><linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%234f46e5'/><stop offset='100%25' stop-color='%237c3aed'/></linearGradient></defs><rect width='600' height='800' fill='url(%23bg)'/><circle cx='300' cy='320' r='140' fill='%23818cf8' opacity='0.4'/><circle cx='300' cy='280' r='90' fill='%23fecdd3'/><path d='M150,750 C150,500 450,500 450,750 Z' fill='%231e1b4b'/><text x='300' y='720' font-family='sans-serif' font-size='26' font-weight='bold' fill='%23ffffff' text-anchor='middle'>✨ AI 프로필 헤드샷</text></svg>";
 
 /* ------------------------------------------------------------------ */
 /*  Style cards data                                                   */
@@ -32,9 +37,10 @@ const STYLE_OPTIONS: StyleCard[] = [
     value: "corporate",
     label: "\ube44\uc988\ub2c8\uc2a4 \uc815\uc7a5",
     desc: "\uc804\ubb38\uc801\uc778 \ud504\ub85c\ud544",
+    filter: "contrast(1.2) brightness(1.08) saturate(0.9) hue-rotate(-10deg)",
     icon: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 21v-2a4 4 0 0 4-4H8a4 4 0 0 0-4 4v2" />
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
         <circle cx="12" cy="7" r="4" />
         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
@@ -44,6 +50,7 @@ const STYLE_OPTIONS: StyleCard[] = [
     value: "studio",
     label: "\uc2a4\ud29c\ub514\uc624",
     desc: "\uae54\ub054\ud55c \ubc30\uacbd",
+    filter: "brightness(1.15) contrast(1.1) saturate(1.1)",
     icon: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
@@ -55,6 +62,7 @@ const STYLE_OPTIONS: StyleCard[] = [
     value: "outdoor",
     label: "\uc57c\uc678 \uc790\uc5f0\uad11",
     desc: "\ub530\ub73b\ud55c \ubd84\uc704\uae30",
+    filter: "sepia(0.2) contrast(1.12) brightness(1.1) saturate(1.3)",
     icon: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="5" />
@@ -307,6 +315,8 @@ export default function UploadCard() {
     setError(null);
   };
 
+  const selectedStyleObj = STYLE_OPTIONS.find((s) => s.value === style) || STYLE_OPTIONS[0];
+
   /* ---- render ---- */
 
   return (
@@ -353,7 +363,7 @@ export default function UploadCard() {
         {/* ══════════════════════════════════════════════════════════ */}
         {hasResults && preview ? (
           <div className="space-y-8 animate-reveal">
-            {/* ── Interactive Before/After Drag Slider (Using latest output) ── */}
+            {/* ── Real AI Generated Image Interactive Before/After Drag Slider ── */}
             <div className="space-y-2 max-w-md mx-auto">
               <div className="flex items-center justify-between px-1">
                 <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
@@ -361,17 +371,17 @@ export default function UploadCard() {
                     <polyline points="9 18 15 12 9 6" />
                     <polyline points="15 18 9 12 15 6" />
                   </svg>
-                  {"\uc2e4\uc2dc\uac04 Before / After \ub4dc\ub798\uadf8 \ube44\uad50"}
+                  {"실시간 AI 생성 Before / After 드래그 비교"}
                 </span>
                 <span className="text-[11px] text-slate-400">
-                  {"\uc0ac\uc6b9\uc790 \uc9c1\uc124 \uc2ac\ub77c\uc774\ub354"}
+                  {"드래그하여 비교"}
                 </span>
               </div>
               <ImageSlider
                 beforeImage={preview}
                 afterImage={resultUrl31 || resultUrl20 || ""}
-                beforeLabel={"\uc6d0\ubcf8 \uc140\uce74"}
-                afterLabel={resultUrl31 ? "Gemini 3.1 AI \ud5e4\ub4dc\uc0f7" : "Gemini 2.0 AI \ud5e4\ub4dc\uc0f7"}
+                beforeLabel={"원본 셀카"}
+                afterLabel={resultUrl31 ? "Gemini 3.1 AI 헤드샷" : "Gemini 2.0 AI 헤드샷"}
               />
             </div>
 
@@ -381,12 +391,12 @@ export default function UploadCard() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    {"\uc6d0\ubcf8 \uc140\uce74"}
+                    {"원본 셀카"}
                   </span>
                 </div>
                 <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover" />
+                  <img src={preview} alt={"원본"} className="w-full h-full object-cover" />
                 </div>
               </div>
 
@@ -398,7 +408,7 @@ export default function UploadCard() {
                     Gemini 3.1 Flash
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
-                    {"\ucd9c\ucc9c \u00b7 \ucd5c\uc2e0"}
+                    {"추천 · 최신"}
                   </span>
                 </div>
                 <div className="rounded-2xl overflow-hidden border-2 border-indigo-300 shadow-md bg-slate-50 aspect-[3/4] relative">
@@ -442,7 +452,7 @@ export default function UploadCard() {
                     Gemini 2.0 Flash
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
-                    {"\uc2e4\ud5d8\uc6a9"}
+                    {"실험용"}
                   </span>
                 </div>
                 <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4] relative">
@@ -518,7 +528,7 @@ export default function UploadCard() {
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 aspect-[3/4] overflow-hidden">
                   {preview ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover opacity-50" />
+                    <img src={preview} alt={"원본"} className="w-full h-full object-cover opacity-50" />
                   ) : (
                     <div className="w-full h-full animate-pulse bg-slate-100" />
                   )}
@@ -548,86 +558,77 @@ export default function UploadCard() {
           </div>
         ) : (
           /* ══════════════════════════════════════════════════════════ */
-          /*  STATE: Default - Upload + Interactive Pre-generation      */
-          /*         Preview Slider + Model & Style Picker              */
+          /*  STATE: Default - Upload + Always Visible Demo Slider      */
           /* ══════════════════════════════════════════════════════════ */
           <>
-            {/* ── Upload Area / Interactive Pre-generation Preview Slider ── */}
-            {preview ? (
-              /* Pre-generation Interactive Preview Slider with uploaded photo */
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                    </svg>
-                    {"생성 전 Before / After 슬라이더 미리보기"}
+            {/* ── Interactive Before/After Drag Slider (Always visible before generation!) ── */}
+            <div className="space-y-3 bg-gradient-to-br from-indigo-50/60 to-violet-50/40 p-4 sm:p-6 rounded-3xl border border-indigo-100/80">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
+                  <span className="text-xs sm:text-sm font-bold text-indigo-900">
+                    {"↔️ 마우스나 손가락으로 슬라이더를 움직여 AI 변환을 미리 체험해 보세요!"}
                   </span>
+                </div>
+                {preview && (
                   <button
                     type="button"
                     onClick={clearImage}
-                    className="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                    className="text-xs font-medium text-slate-400 hover:text-red-500 transition-colors"
                   >
                     {"다른 사진 선택"}
                   </button>
-                </div>
-
-                <div className="max-w-md mx-auto">
-                  <ImageSlider
-                    beforeImage={preview}
-                    afterImage={preview} // Before generation, preview slider shows selfie with filter overlay
-                    beforeLabel={"원본 셀카"}
-                    afterLabel={`${style === "corporate" ? "비즈니스 정장" : style === "studio" ? "스튜디오" : "야외 자연광"} 완성 예시`}
-                  />
-                </div>
+                )}
               </div>
-            ) : (
-              /* Drag & Drop Upload Zone */
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => inputRef.current?.click()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-                }}
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                className={`
-                  relative group cursor-pointer rounded-2xl border-2 border-dashed
-                  transition-all duration-300 overflow-hidden
-                  ${
-                    isDragging
-                      ? "border-indigo-400 bg-indigo-50/80 scale-[1.01]"
-                      : "border-slate-200 bg-slate-50/50 hover:border-indigo-300 hover:bg-indigo-50/40"
-                  }
-                `}
-              >
-                <div className="flex flex-col items-center justify-center py-10 px-6">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+
+              {/* Slider View: Uses uploaded selfie or default sample portrait */}
+              <div className="max-w-md mx-auto">
+                <ImageSlider
+                  beforeImage={preview || SAMPLE_BEFORE}
+                  afterImage={preview || SAMPLE_AFTER}
+                  afterFilter={preview ? selectedStyleObj.filter : undefined}
+                  beforeLabel={preview ? "원본 셀카" : "샘플 셀카"}
+                  afterLabel={preview ? `${selectedStyleObj.label} 완성 예시` : "✨ AI 헤드샷 샘플"}
+                />
+              </div>
+
+              {/* Upload Action Bar */}
+              <div className="pt-2 flex flex-col items-center gap-2">
+                {!preview ? (
+                  <button
+                    type="button"
+                    onClick={() => inputRef.current?.click()}
+                    className="w-full max-w-md py-4 rounded-2xl bg-white border-2 border-dashed border-indigo-300 hover:border-indigo-500 hover:bg-indigo-50/50 text-indigo-700 font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 group"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:scale-110 transition-transform">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="17 8 12 3 7 8" />
                       <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
+                    {"📸 내 셀카 사진 업로드하기"}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span>{fileName} 업로드 완료</span>
                   </div>
-                  <p className="text-sm font-semibold text-slate-700 mb-1">
-                    {"클릭 또는 드래그하여 셀카 업로드"}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {"JPG, PNG, WebP \u00b7 최대 8MB"}
-                  </p>
-                </div>
-
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
+                )}
+                <p className="text-[11px] text-slate-400">
+                  {"JPG, PNG, WebP · 최대 8MB"}
+                </p>
               </div>
-            )}
+
+              {/* Hidden file input */}
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
 
             {/* Model Selection Tabs */}
             <div className="space-y-2">
@@ -731,8 +732,8 @@ export default function UploadCard() {
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
               {targetModel === "compare"
-                ? "\ub450 \ubaa8\ub378 \ubaa8\ub450 \uc0dd\uc131\ud558\uae30"
-                : `${targetModel === "gemini-3.1-flash-image" ? "Gemini 3.1" : "Gemini 2.0"} \ud5e4\ub4dc\uc0f7 \uc0dd\uc131`}
+                ? "두 모델 모두 생성하기"
+                : `${targetModel === "gemini-3.1-flash-image" ? "Gemini 3.1" : "Gemini 2.0"} 헤드샷 생성`}
             </button>
 
             {/* Demo uses indicator */}
