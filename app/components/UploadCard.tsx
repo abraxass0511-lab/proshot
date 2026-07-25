@@ -19,7 +19,7 @@ import { PRINT_SIZES, generatePhotoSheet, type PrintSize } from "@/app/lib/photo
 
 type ModelOption = "compare" | "gemini-3.1-flash-image" | "gemini-2.0-flash-exp";
 
-const MAX_FILE_SIZE = 12 * 1024 * 1024; // 12 MB
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 const DEMO_LIMIT = 2;
 const LS_USES_KEY = "proshot_uses";
 const LS_BYOK_KEY = "proshot_byok";
@@ -102,27 +102,18 @@ export default function UploadCard() {
     }
   }, []);
 
-  /* ---- Robust File Reader (Accepts any image format) ---- */
+  /* ---- Trigger File Selection Window ---- */
+  const triggerFileInput = () => {
+    if (inputRef.current) {
+      inputRef.current.value = "";
+      inputRef.current.click();
+    }
+  };
+
+  /* ---- Robust File Reader ---- */
 
   const validateAndRead = useCallback((file: File) => {
     setError(null);
-
-    // Flexible MIME check & extension fallback for Windows / iOS
-    const mime = (file.type || "").toLowerCase();
-    const ext = (file.name || "").split(".").pop()?.toLowerCase() || "";
-    const isImageMime = mime.startsWith("image/");
-    const isImageExt = ["jpg", "jpeg", "png", "webp", "heic", "heif", "jfif", "bmp", "gif", "svg"].includes(ext);
-
-    if (!isImageMime && !isImageExt) {
-      setError("이미지 파일(JPG, PNG, WebP 등)만 업로드할 수 있습니다.");
-      return;
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      setError(`파일 크기가 너무 큽니다 (${sizeMB}MB). 12MB 이하의 이미지를 선택해 주세요.`);
-      return;
-    }
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -143,7 +134,9 @@ export default function UploadCard() {
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) validateAndRead(file);
+    if (file) {
+      validateAndRead(file);
+    }
   };
 
   const handleDrop = useCallback(
@@ -336,6 +329,15 @@ export default function UploadCard() {
 
   return (
     <div className="w-full max-w-4xl mx-auto">
+      {/* Hidden File Input (Always in DOM) */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       {/* Error Toast */}
       {toast && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-in">
@@ -535,7 +537,7 @@ export default function UploadCard() {
                 type="button"
                 onClick={() => handleGenerateModel("compare")}
                 disabled={isLoading}
-                className="flex-1 py-3.5 rounded-2xl text-sm font-bold bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="23 4 23 10 17 10" />
@@ -546,7 +548,7 @@ export default function UploadCard() {
               <button
                 type="button"
                 onClick={handleResetResults}
-                className="flex-1 py-3.5 rounded-2xl text-sm font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="13.5" cy="6.5" r="2.5" />
@@ -622,8 +624,11 @@ export default function UploadCard() {
                 )}
               </div>
 
-              {/* Slider View: Uses uploaded selfie or default sample portrait */}
-              <div className="max-w-md mx-auto">
+              {/* Slider View: Clickable to trigger photo upload if no preview yet */}
+              <div
+                onClick={!preview ? triggerFileInput : undefined}
+                className={`max-w-md mx-auto relative group ${!preview ? "cursor-pointer" : ""}`}
+              >
                 <ImageSlider
                   beforeImage={preview || SAMPLE_BEFORE}
                   afterImage={preview || SAMPLE_AFTER}
@@ -631,6 +636,18 @@ export default function UploadCard() {
                   beforeLabel={preview ? "원본 셀카" : "샘플 셀카"}
                   afterLabel={preview ? `${currentStyleObj.label} 완성 예시` : "✨ AI 헤드샷 샘플"}
                 />
+                {!preview && (
+                  <div className="absolute inset-0 bg-indigo-900/10 group-hover:bg-indigo-900/20 transition-all rounded-2xl flex items-center justify-center pointer-events-none">
+                    <span className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-full text-xs font-bold text-indigo-600 shadow-md group-hover:scale-105 transition-transform flex items-center gap-1.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      클릭하여 내 사진 업로드
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Upload Action Bar & Drag-and-drop Zone */}
@@ -641,8 +658,9 @@ export default function UploadCard() {
                 className="pt-2 flex flex-col items-center gap-2"
               >
                 {!preview ? (
-                  <label
-                    htmlFor="photo-upload-input"
+                  <button
+                    type="button"
+                    onClick={triggerFileInput}
                     className="w-full max-w-md py-4 rounded-2xl bg-white border-2 border-dashed border-indigo-300 hover:border-indigo-500 hover:bg-indigo-50/50 text-indigo-700 font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 group cursor-pointer"
                   >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:scale-110 transition-transform">
@@ -651,7 +669,7 @@ export default function UploadCard() {
                       <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
                     <span>📸 내 셀카 사진 업로드하기</span>
-                  </label>
+                  </button>
                 ) : (
                   <div className="flex flex-col items-center gap-1.5 w-full max-w-md bg-emerald-50 border border-emerald-200 p-3 rounded-2xl animate-in">
                     <div className="flex items-center gap-2 text-xs font-bold text-emerald-700">
@@ -661,23 +679,13 @@ export default function UploadCard() {
                       <span>{fileName} 업로드 완료!</span>
                     </div>
                     <p className="text-[11px] text-emerald-600 font-medium">
-                      위 슬라이더에서 스타일 미리보기를 확인하고, 아래에서 AI 생성을 진행하세요.
+                      위 슬라이더에서 미리보기를 확인하고, 아래 버튼을 눌러 AI 생성을 진행하세요.
                     </p>
                   </div>
                 )}
                 <p className="text-[11px] text-slate-400">
-                  {"JPG, PNG, WebP · 최대 12MB (클릭 또는 드래그앤드롭)"}
+                  {"JPG, PNG, WebP · 최대 15MB (클릭 또는 드래그앤드롭)"}
                 </p>
-
-                {/* Always active hidden file input */}
-                <input
-                  id="photo-upload-input"
-                  ref={inputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
               </div>
             </div>
 
@@ -699,7 +707,7 @@ export default function UploadCard() {
                       type="button"
                       onClick={() => setTargetModel(m.id as ModelOption)}
                       className={`
-                        py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5
+                        py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer
                         ${
                           isSel
                             ? "bg-white text-indigo-600 shadow-md shadow-slate-200/50"
@@ -740,7 +748,7 @@ export default function UploadCard() {
                         }
                       }}
                       className={`
-                        py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5
+                        py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer
                         ${
                           isSel
                             ? "bg-white text-indigo-700 shadow-md shadow-slate-200/50"
@@ -780,7 +788,7 @@ export default function UploadCard() {
                         type="button"
                         onClick={() => setSelectedStyleId(opt.id)}
                         className={`
-                          relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2
+                          relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2 cursor-pointer
                           transition-all duration-200 text-center
                           ${
                             isSelected
@@ -826,7 +834,7 @@ export default function UploadCard() {
                           type="button"
                           onClick={() => setSelectedBgColor(bg.id)}
                           className={`
-                            flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-all
+                            flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-all cursor-pointer
                             ${
                               isSel
                                 ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm"
@@ -946,7 +954,7 @@ export default function UploadCard() {
                         type="button"
                         onClick={() => setSelectedPrintSize(size)}
                         className={`
-                          w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all
+                          w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer
                           ${
                             isSel
                               ? "border-indigo-500 bg-indigo-50/70 shadow-sm"
@@ -978,7 +986,7 @@ export default function UploadCard() {
               <button
                 type="button"
                 onClick={() => setShowPrintModal(false)}
-                className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors"
+                className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 취소
               </button>
@@ -986,7 +994,7 @@ export default function UploadCard() {
                 type="button"
                 onClick={handleDownloadPrintSheet}
                 disabled={isSheetGenerating}
-                className="flex-1 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2"
+                className="flex-1 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isSheetGenerating ? (
                   <span>생성 중...</span>
@@ -1087,7 +1095,7 @@ export default function UploadCard() {
                     disabled={!byokInput.trim()}
                     className={`w-full py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
                       byokInput.trim()
-                        ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200/50"
+                        ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200/50 cursor-pointer"
                         : "bg-slate-100 text-slate-300 cursor-not-allowed"
                     }`}
                   >
