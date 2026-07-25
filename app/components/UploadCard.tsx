@@ -335,7 +335,7 @@ export default function UploadCard() {
 
         {/* STATE: Result - Before / After View */}
         {resultUrl && preview ? (
-          <div className="space-y-5">
+          <div className="space-y-5 animate-reveal">
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {/* Original */}
               <div className="space-y-2">
