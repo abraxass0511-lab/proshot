@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     } = body as {
       imageBase64?: string;
       style?: string;
-      targetModel?: string; // "gemini-3.1-flash-image" | "gemini-2.0-flash-exp" | "compare"
+      targetModel?: string; // "gemini-3.1-flash-image" | "gemini-3.1-flash-lite-image" | "compare"
       bgColor?: BgColor;
       customPrompt?: string;
     };
@@ -132,11 +132,19 @@ export async function POST(req: NextRequest) {
       /* ---- Compare mode: run both models in parallel ---- */
       const [res31, res20] = await Promise.allSettled([
         generateWithModel(ai, "gemini-3.1-flash-image", finalPrompt, mimeType, base64Data),
-        generateWithModel(ai, "gemini-2.0-flash-exp", finalPrompt, mimeType, base64Data),
+        generateWithModel(ai, "gemini-3.1-flash-lite-image", finalPrompt, mimeType, base64Data),
       ]);
 
       const imageUrl31 = res31.status === "fulfilled" ? res31.value : null;
       const imageUrl20 = res20.status === "fulfilled" ? res20.value : null;
+
+      // Log detailed errors for debugging
+      if (res31.status === "rejected") {
+        console.error("[generate] gemini-3.1-flash-image failed:", res31.reason);
+      }
+      if (res20.status === "rejected") {
+        console.error("[generate] gemini-3.1-flash-lite-image failed:", res20.reason);
+      }
 
       if (!imageUrl31 && !imageUrl20) {
         return NextResponse.json(
@@ -155,8 +163,8 @@ export async function POST(req: NextRequest) {
 
     /* ---- Single model mode ---- */
     const modelToUse =
-      targetModel === "gemini-2.0-flash-exp"
-        ? "gemini-2.0-flash-exp"
+      targetModel === "gemini-3.1-flash-lite-image"
+        ? "gemini-3.1-flash-lite-image"
         : "gemini-3.1-flash-image";
 
     const imageUrl = await generateWithModel(ai, modelToUse, finalPrompt, mimeType, base64Data);

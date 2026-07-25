@@ -17,7 +17,7 @@ import { PRINT_SIZES, generatePhotoSheet, type PrintSize } from "@/app/lib/photo
 /*  Types & Sample Data                                                */
 /* ------------------------------------------------------------------ */
 
-type ModelOption = "compare" | "gemini-3.1-flash-image" | "gemini-2.0-flash-exp";
+type ModelOption = "compare" | "gemini-3.1-flash-image" | "gemini-3.1-flash-lite-image";
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 const DEMO_LIMIT = 2;
@@ -246,7 +246,7 @@ export default function UploadCard() {
         if (data.imageUrl20) setResultUrl20(data.imageUrl20);
       } else if (data.selectedModel === "gemini-3.1-flash-image") {
         setResultUrl31(data.imageUrl);
-      } else if (data.selectedModel === "gemini-2.0-flash-exp") {
+      } else if (data.selectedModel === "gemini-3.1-flash-lite-image") {
         setResultUrl20(data.imageUrl);
       } else if (data.imageUrl) {
         setResultUrl31(data.imageUrl);
@@ -474,30 +474,30 @@ export default function UploadCard() {
                 )}
               </div>
 
-              {/* 3. Gemini 2.0 Flash Result Card */}
+              {/* 3. Gemini 3.1 Flash Lite Result Card */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                    Gemini 2.0 Flash
+                    Gemini 3.1 Lite
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
-                    {"실험용"}
+                    {"경제적"}
                   </span>
                 </div>
                 <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4] relative">
                   {resultUrl20 ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={resultUrl20} alt={"Gemini 2.0 Result"} className="w-full h-full object-cover" />
+                    <img src={resultUrl20} alt={"Gemini 3.1 Lite Result"} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-slate-50 text-center gap-3">
                       <p className="text-xs text-slate-400">{"아직 생성되지 않았습니다"}</p>
                       <button
                         type="button"
-                        onClick={() => handleGenerateModel("gemini-2.0-flash-exp")}
+                        onClick={() => handleGenerateModel("gemini-3.1-flash-lite-image")}
                         disabled={isLoading}
                         className="px-3 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold shadow-md hover:bg-slate-900 transition-all"
                       >
-                        {"Gemini 2.0 생성하기"}
+                        {"Gemini 3.1 Lite 생성하기"}
                       </button>
                     </div>
                   )}
@@ -506,7 +506,7 @@ export default function UploadCard() {
                   <div className="space-y-1.5">
                     <button
                       type="button"
-                      onClick={() => handleDownloadImage(resultUrl20, "gemini-2.0")}
+                      onClick={() => handleDownloadImage(resultUrl20, "gemini-3.1-lite")}
                       className="w-full py-2.5 rounded-xl text-xs font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -697,8 +697,8 @@ export default function UploadCard() {
               <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-2xl">
                 {[
                   { id: "compare", label: "\u26a1 두 모델 모두 생성", tag: "추천" },
-                  { id: "gemini-3.1-flash-image", label: "Gemini 3.1 Flash", tag: "최신" },
-                  { id: "gemini-2.0-flash-exp", label: "Gemini 2.0 Flash", tag: "실험용" },
+                  { id: "gemini-3.1-flash-image", label: "Gemini 3.1 Flash", tag: "고품질" },
+                  { id: "gemini-3.1-flash-lite-image", label: "Gemini 3.1 Lite", tag: "경제적" },
                 ].map((m) => {
                   const isSel = targetModel === m.id;
                   return (
