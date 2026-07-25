@@ -34,7 +34,7 @@ const STYLE_OPTIONS: StyleCard[] = [
     desc: "\uc804\ubb38\uc801\uc778 \ud504\ub85c\ud544",
     icon: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <path d="M20 21v-2a4 4 0 0 4-4H8a4 4 0 0 0-4 4v2" />
         <circle cx="12" cy="7" r="4" />
         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
@@ -84,10 +84,9 @@ export default function UploadCard() {
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Result state
+  // Result states for independent model outputs
   const [resultUrl31, setResultUrl31] = useState<string | null>(null);
   const [resultUrl20, setResultUrl20] = useState<string | null>(null);
-  const [singleResultUrl, setSingleResultUrl] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -178,12 +177,11 @@ export default function UploadCard() {
     setError(null);
     setResultUrl31(null);
     setResultUrl20(null);
-    setSingleResultUrl(null);
     if (inputRef.current) inputRef.current.value = "";
   };
 
   const isValid = preview !== null && error === null;
-  const hasResults = resultUrl31 || resultUrl20 || singleResultUrl;
+  const hasResults = resultUrl31 !== null || resultUrl20 !== null;
 
   /* ---- BYOK helpers ---- */
 
@@ -209,7 +207,7 @@ export default function UploadCard() {
 
   /* ---- API call ---- */
 
-  const handleGenerate = async () => {
+  const handleGenerateModel = async (modelToRun: ModelOption) => {
     if (!isValid || isLoading || !preview) return;
 
     const isByok = byokKey.length > 0;
@@ -221,9 +219,6 @@ export default function UploadCard() {
 
     setIsLoading(true);
     setError(null);
-    setResultUrl31(null);
-    setResultUrl20(null);
-    setSingleResultUrl(null);
 
     try {
       const headers: Record<string, string> = {
@@ -240,7 +235,7 @@ export default function UploadCard() {
         body: JSON.stringify({
           imageBase64: preview,
           style,
-          targetModel,
+          targetModel: modelToRun,
         }),
       });
 
@@ -252,10 +247,14 @@ export default function UploadCard() {
       }
 
       if (data.compareMode) {
-        setResultUrl31(data.imageUrl31 || null);
-        setResultUrl20(data.imageUrl20 || null);
+        if (data.imageUrl31) setResultUrl31(data.imageUrl31);
+        if (data.imageUrl20) setResultUrl20(data.imageUrl20);
+      } else if (data.selectedModel === "gemini-3.1-flash-image") {
+        setResultUrl31(data.imageUrl);
+      } else if (data.selectedModel === "gemini-2.0-flash-exp") {
+        setResultUrl20(data.imageUrl);
       } else if (data.imageUrl) {
-        setSingleResultUrl(data.imageUrl);
+        setResultUrl31(data.imageUrl);
       } else {
         setError("\uacb0\uacfc \uc774\ubbf8\uc9c0\ub97c \ubc1b\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \uc2dc\ub3c4\ud574 \uc8fc\uc138\uc694.");
         return;
@@ -291,10 +290,10 @@ export default function UploadCard() {
 
   /* ---- download helper ---- */
 
-  const handleDownloadImage = (url: string, suffix: string) => {
+  const handleDownloadImage = (url: string, modelLabel: string) => {
     const link = document.createElement("a");
     link.href = url;
-    link.download = `proshot-headshot-${suffix}.png`;
+    link.download = `proshot-headshot-${modelLabel}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -302,18 +301,9 @@ export default function UploadCard() {
 
   /* ---- action handlers ---- */
 
-  const handleRetry = () => {
+  const handleResetResults = () => {
     setResultUrl31(null);
     setResultUrl20(null);
-    setSingleResultUrl(null);
-    setError(null);
-    handleGenerate();
-  };
-
-  const handleChangeStyle = () => {
-    setResultUrl31(null);
-    setResultUrl20(null);
-    setSingleResultUrl(null);
     setError(null);
   };
 
@@ -353,15 +343,17 @@ export default function UploadCard() {
           </h3>
           <p className="text-sm text-slate-400">
             {hasResults
-              ? "\ubaa8\ub378\ubcc4 \uacb0\uacfc\ub97c \ube44\uad50\ud558\uace0 \ub9c8\uc74c\uc5d0 \ub4dc\ub294 \uc0ac\uc9c4\uc744 \ub2e4\uc6b4\ub85c\ub4dc\ud558\uc138\uc694"
+              ? "\uac01 \ubaa8\ub378\ubcc4 \uc0dd\uc131 \uacb0\uacfc\ub97c \ud655\uc778\ud558\uace0 \ub2e4\uc6b4\ub85c\ub4dc\ud558\uc138\uc694"
               : "\uc815\uba74 \uc140\uce74 \ud55c \uc7a5\uc774\uba74 \ucda9\ubd84\ud569\ub2c8\ub2e4"}
           </p>
         </div>
 
-        {/* STATE: Result - Interactive Slider + Cards */}
+        {/* ══════════════════════════════════════════════════════════ */}
+        {/*  STATE: Results Generated - Display Each Model's Image     */}
+        {/* ══════════════════════════════════════════════════════════ */}
         {hasResults && preview ? (
           <div className="space-y-8 animate-reveal">
-            {/* ── Interactive Before/After Drag Slider ── */}
+            {/* ── Interactive Before/After Drag Slider (Using latest output) ── */}
             <div className="space-y-2 max-w-md mx-auto">
               <div className="flex items-center justify-between px-1">
                 <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
@@ -369,7 +361,7 @@ export default function UploadCard() {
                     <polyline points="9 18 15 12 9 6" />
                     <polyline points="15 18 9 12 15 6" />
                   </svg>
-                  {"\ub4dc\ub798\uadf8\ud558\uc5ec Before / After \ube44\uad50"}
+                  {"\uc2e4\uc2dc\uac04 Before / After \ub4dc\ub798\uadf8 \ube44\uad50"}
                 </span>
                 <span className="text-[11px] text-slate-400">
                   {"\uc0ac\uc6b9\uc790 \uc9c1\uc124 \uc2ac\ub77c\uc774\ub354"}
@@ -377,139 +369,148 @@ export default function UploadCard() {
               </div>
               <ImageSlider
                 beforeImage={preview}
-                afterImage={resultUrl31 || resultUrl20 || singleResultUrl || ""}
+                afterImage={resultUrl31 || resultUrl20 || ""}
                 beforeLabel={"\uc6d0\ubcf8 \uc140\uce74"}
-                afterLabel={resultUrl31 ? "Gemini 3.1 AI \ud5e4\ub4dc\uc0f7" : "AI \ud5e4\ub4dc\uc0f7"}
+                afterLabel={resultUrl31 ? "Gemini 3.1 AI \ud5e4\ub4dc\uc0f7" : "Gemini 2.0 AI \ud5e4\ub4dc\uc0f7"}
               />
             </div>
 
-            {/* Grid layout depending on comparison or single mode */}
-            {resultUrl31 && resultUrl20 ? (
-              /* ── 3-Column Comparison View ── */
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* 1. Original */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                      {"\uc6d0\ubcf8 \uc140\uce74"}
-                    </span>
-                  </div>
-                  <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover" />
-                  </div>
+            {/* ── Grid: Each Model's Individual Generated Image Card ── */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {/* 1. Original Selfie */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    {"\uc6d0\ubcf8 \uc140\uce74"}
+                  </span>
                 </div>
+                <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover" />
+                </div>
+              </div>
 
-                {/* 2. Gemini 3.1 Flash Image (New & Recommended) */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 uppercase tracking-wider">
-                      <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
-                      Gemini 3.1 Flash
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
-                      {"\ucd9c\ucc9c \u00b7 \ucd5c\uc2e0"}
-                    </span>
-                  </div>
-                  <div className="rounded-2xl overflow-hidden border-2 border-indigo-400 shadow-lg shadow-indigo-100/50 bg-slate-50 aspect-[3/4] relative group">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={resultUrl31} alt={"Gemini 3.1 Flash Result"} className="w-full h-full object-cover" />
-                  </div>
+              {/* 2. Gemini 3.1 Flash Result Card */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                    Gemini 3.1 Flash
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
+                    {"\ucd9c\ucc9c \u00b7 \ucd5c\uc2e0"}
+                  </span>
+                </div>
+                <div className="rounded-2xl overflow-hidden border-2 border-indigo-300 shadow-md bg-slate-50 aspect-[3/4] relative">
+                  {resultUrl31 ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={resultUrl31} alt={"Gemini 3.1 Result"} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-slate-50 text-center gap-3">
+                      <p className="text-xs text-slate-400">{"아직 생성되지 않았습니다"}</p>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateModel("gemini-3.1-flash-image")}
+                        disabled={isLoading}
+                        className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md hover:bg-indigo-700 transition-all"
+                      >
+                        {"Gemini 3.1 생성하기"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {resultUrl31 && (
                   <button
                     type="button"
                     onClick={() => handleDownloadImage(resultUrl31, "gemini-3.1")}
-                    className="w-full py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm flex items-center justify-center gap-1.5"
+                    className="w-full py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-md flex items-center justify-center gap-1.5"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="7 10 12 15 17 10" />
                       <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    {"3.1 \uacb0\uacfc \ub2e4\uc6b4\ub85c\ub4dc"}
+                    {"Gemini 3.1 PNG 다운로드"}
                   </button>
-                </div>
+                )}
+              </div>
 
-                {/* 3. Gemini 2.0 Flash Exp (Legacy) */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Gemini 2.0 Flash
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
-                      {"\uc2e4\ud5d8\uc6a9"}
-                    </span>
-                  </div>
-                  <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={resultUrl20} alt={"Gemini 2.0 Flash Result"} className="w-full h-full object-cover" />
-                  </div>
+              {/* 3. Gemini 2.0 Flash Result Card */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    Gemini 2.0 Flash
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
+                    {"\uc2e4\ud5d8\uc6a9"}
+                  </span>
+                </div>
+                <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 aspect-[3/4] relative">
+                  {resultUrl20 ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={resultUrl20} alt={"Gemini 2.0 Result"} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-slate-50 text-center gap-3">
+                      <p className="text-xs text-slate-400">{"아직 생성되지 않았습니다"}</p>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateModel("gemini-2.0-flash-exp")}
+                        disabled={isLoading}
+                        className="px-3 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold shadow-md hover:bg-slate-900 transition-all"
+                      >
+                        {"Gemini 2.0 생성하기"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {resultUrl20 && (
                   <button
                     type="button"
                     onClick={() => handleDownloadImage(resultUrl20, "gemini-2.0")}
-                    className="w-full py-2.5 rounded-xl text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                    className="w-full py-2.5 rounded-xl text-xs font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="7 10 12 15 17 10" />
                       <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    {"2.0 \uacb0\uacfc \ub2e4\uc6b4\ub85c\ub4dc"}
+                    {"Gemini 2.0 PNG 다운로드"}
                   </button>
-                </div>
+                )}
               </div>
-            ) : (
-              /* ── Single View ── */
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    {"\uc6d0\ubcf8"}
-                  </span>
-                  <div className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-slate-50 aspect-[3/4]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={preview} alt={"\uc6d0\ubcf8"} className="w-full h-full object-cover" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <span className="text-xs font-semibold text-indigo-500 uppercase tracking-wider">
-                    {"AI \ud5e4\ub4dc\uc0f7"}
-                  </span>
-                  <div className="rounded-2xl overflow-hidden border-2 border-indigo-100 shadow-md bg-slate-50 aspect-[3/4]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={singleResultUrl || resultUrl31 || resultUrl20 || ""} alt={"AI 생성 헤드샷"} className="w-full h-full object-cover" />
-                  </div>
-                </div>
-              </div>
-            )}
+            </div>
 
             {/* Action buttons */}
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="button"
-                onClick={handleRetry}
+                onClick={() => handleGenerateModel("compare")}
                 disabled={isLoading}
-                className="flex-1 py-3.5 rounded-2xl text-sm font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-lg transition-all flex items-center justify-center gap-2"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="23 4 23 10 17 10" />
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                 </svg>
-                {"\ub2e4\uc2dc \uc0dd\uc131\ud558\uae30"}
+                {"두 모델 모두 다시 생성"}
               </button>
               <button
                 type="button"
-                onClick={handleChangeStyle}
-                className="flex-1 py-3.5 rounded-2xl text-sm font-bold bg-slate-900 text-white hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-md"
+                onClick={handleResetResults}
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="13.5" cy="6.5" r="2.5" />
                   <path d="M17 2H7a5 5 0 0 0-5 5v10a5 5 0 0 0 5 5h10a5 5 0 0 0 5-5V7a5 5 0 0 0-5-5z" />
                 </svg>
-                {"\uc2a4\ud0c0\uc77c/ 모델 \ubc14\uafb8\uae30"}
+                {"스타일 / 사진 다시 선택"}
               </button>
             </div>
           </div>
         ) : isLoading ? (
-          /* STATE: Loading Skeleton */
+          /* ══════════════════════════════════════════════════════════ */
+          /*  STATE: Loading Skeleton                                   */
+          /* ══════════════════════════════════════════════════════════ */
           <div className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -532,12 +533,10 @@ export default function UploadCard() {
                   </svg>
                   <div className="text-center">
                     <p className="text-sm font-bold text-indigo-600">
-                      {targetModel === "compare"
-                        ? "Gemini 3.1과 2.0 두 모델이 사진을 만드난 중..."
-                        : "AI가 헤드샷을 만드는 중..."}
+                      {"AI가 고화질 헤드샷을 생성 중입니다..."}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
-                      {"\ubaa8\ub378 \ube44\uad50 \uc0dd\uc131 \uc2dc 15~30\ucd08 \uc18c\uc694\ub429\ub2c8\ub2e4"}
+                      {"15~30초 소요됩니다"}
                     </p>
                   </div>
                   <div className="w-48 h-1 rounded-full bg-indigo-100 overflow-hidden mt-1">
@@ -548,64 +547,62 @@ export default function UploadCard() {
             </div>
           </div>
         ) : (
-          /* STATE: Default - Upload + Model Picker + Style Picker */
+          /* ══════════════════════════════════════════════════════════ */
+          /*  STATE: Default - Upload + Interactive Pre-generation      */
+          /*         Preview Slider + Model & Style Picker              */
+          /* ══════════════════════════════════════════════════════════ */
           <>
-            {/* Upload area */}
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => inputRef.current?.click()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-              }}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              className={`
-                relative group cursor-pointer rounded-2xl border-2 border-dashed
-                transition-all duration-300 overflow-hidden
-                ${
-                  isDragging
-                    ? "border-indigo-400 bg-indigo-50/80 scale-[1.01]"
-                    : preview
-                      ? "border-transparent bg-slate-50"
-                      : "border-slate-200 bg-slate-50/50 hover:border-indigo-300 hover:bg-indigo-50/40"
-                }
-              `}
-            >
-              {preview ? (
-                <div className="relative aspect-[4/3] sm:aspect-[16/9] flex items-center justify-center p-4">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={preview}
-                    alt={"\uc5c5\ub85c\ub4dc\ub41c \uc140\uce74"}
-                    className="max-h-full max-w-full rounded-xl object-contain shadow-lg"
-                  />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <span className="text-white text-sm font-semibold bg-black/40 backdrop-blur-sm px-4 py-2 rounded-full">
-                      {"\ub2e4\ub978 \uc0ac\uc9c4 \uc120\ud0dd"}
-                    </span>
-                  </div>
+            {/* ── Upload Area / Interactive Pre-generation Preview Slider ── */}
+            {preview ? (
+              /* Pre-generation Interactive Preview Slider with uploaded photo */
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                    {"생성 전 Before / After 슬라이더 미리보기"}
+                  </span>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearImage();
-                    }}
-                    className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center text-slate-500 hover:text-red-500 hover:bg-white transition-all duration-200"
+                    onClick={clearImage}
+                    className="text-xs text-slate-400 hover:text-red-500 transition-colors"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
+                    {"다른 사진 선택"}
                   </button>
-                  <div className="absolute bottom-3 left-3 right-3">
-                    <span className="inline-block text-xs text-slate-500 bg-white/80 backdrop-blur-sm px-3 py-1.5 rounded-full truncate max-w-full shadow-sm">
-                      {"\ud83d\udcce"} {fileName}
-                    </span>
-                  </div>
                 </div>
-              ) : (
+
+                <div className="max-w-md mx-auto">
+                  <ImageSlider
+                    beforeImage={preview}
+                    afterImage={preview} // Before generation, preview slider shows selfie with filter overlay
+                    beforeLabel={"원본 셀카"}
+                    afterLabel={`${style === "corporate" ? "비즈니스 정장" : style === "studio" ? "스튜디오" : "야외 자연광"} 완성 예시`}
+                  />
+                </div>
+              </div>
+            ) : (
+              /* Drag & Drop Upload Zone */
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => inputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+                }}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                className={`
+                  relative group cursor-pointer rounded-2xl border-2 border-dashed
+                  transition-all duration-300 overflow-hidden
+                  ${
+                    isDragging
+                      ? "border-indigo-400 bg-indigo-50/80 scale-[1.01]"
+                      : "border-slate-200 bg-slate-50/50 hover:border-indigo-300 hover:bg-indigo-50/40"
+                  }
+                `}
+              >
                 <div className="flex flex-col items-center justify-center py-10 px-6">
                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300">
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -615,33 +612,33 @@ export default function UploadCard() {
                     </svg>
                   </div>
                   <p className="text-sm font-semibold text-slate-700 mb-1">
-                    {"\ud074\ub9ad \ub610\ub294 \ub4dc\ub798\uadf8\ud558\uc5ec \uc5c5\ub85c\ub4dc"}
+                    {"클릭 또는 드래그하여 셀카 업로드"}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {"JPG, PNG, WebP \u00b7 \ucd5c\ub300 8MB"}
+                    {"JPG, PNG, WebP \u00b7 최대 8MB"}
                   </p>
                 </div>
-              )}
 
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </div>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </div>
+            )}
 
             {/* Model Selection Tabs */}
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-slate-700">
-                {"AI \ubaa8\ub378 \uc120\ud0dd"}
+                {"AI 모델 선택"}
               </label>
               <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-2xl">
                 {[
-                  { id: "compare", label: "\u26a1 \ub450 \ubaa8\ub378 \ube44\uad50", tag: "\ucd94\ucc9c" },
-                  { id: "gemini-3.1-flash-image", label: "Gemini 3.1 Flash", tag: "\ucd5c\uc2e0" },
-                  { id: "gemini-2.0-flash-exp", label: "Gemini 2.0 Flash", tag: "\uc2e4\ud5d8\uc6a9" },
+                  { id: "compare", label: "\u26a1 두 모델 모두 생성", tag: "추천" },
+                  { id: "gemini-3.1-flash-image", label: "Gemini 3.1 Flash", tag: "최신" },
+                  { id: "gemini-2.0-flash-exp", label: "Gemini 2.0 Flash", tag: "실험용" },
                 ].map((m) => {
                   const isSel = targetModel === m.id;
                   return (
@@ -671,7 +668,7 @@ export default function UploadCard() {
             {/* Style picker */}
             <div className="space-y-3">
               <label className="block text-sm font-semibold text-slate-700">
-                {"\ud504\ub85c\ud544 \uc2a4\ud0c0\uc77c \uc120\ud0dd"}
+                {"프로필 스타일 선택"}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 {STYLE_OPTIONS.map((opt) => {
@@ -719,7 +716,7 @@ export default function UploadCard() {
             <button
               type="button"
               disabled={!isValid || isLoading}
-              onClick={handleGenerate}
+              onClick={() => handleGenerateModel(targetModel)}
               className={`
                 w-full py-4 rounded-2xl text-base font-bold transition-all duration-200
                 flex items-center justify-center gap-2
@@ -733,7 +730,9 @@ export default function UploadCard() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
-              {targetModel === "compare" ? "\ub450 \ubaa8\ub378 \ube44\uad50 \uc0dd\uc131" : "\ud5e4\ub4dc\uc0f7 \uc0dd\uc131"}
+              {targetModel === "compare"
+                ? "\ub450 \ubaa8\ub378 \ubaa8\ub450 \uc0dd\uc131\ud558\uae30"
+                : `${targetModel === "gemini-3.1-flash-image" ? "Gemini 3.1" : "Gemini 2.0"} \ud5e4\ub4dc\uc0f7 \uc0dd\uc131`}
             </button>
 
             {/* Demo uses indicator */}
@@ -748,7 +747,7 @@ export default function UploadCard() {
                   ))}
                 </div>
                 <span className="text-[11px] text-slate-400">
-                  {"\ubb34\ub8cc"} {usesLeft}/{DEMO_LIMIT}{"\ud68c \ub0a8\uc74c"}
+                  {"무료"} {usesLeft}/{DEMO_LIMIT}{"회 남음"}
                 </span>
               </div>
             )}
@@ -757,7 +756,7 @@ export default function UploadCard() {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                {"\ub0b4 API \ud0a4 \uc0ac\uc6a9 \uc911 \u00b7 \ubb34\uc81c\ud55c"}
+                {"내 API 키 사용 중 · 무제한"}
               </div>
             )}
           </>
@@ -765,7 +764,7 @@ export default function UploadCard() {
 
         {/* Disclaimer */}
         <p className="text-[11px] text-center text-slate-300 leading-relaxed">
-          {"\uc5c5\ub85c\ub4dc\ud55c \uc0ac\uc9c4\uc740 \ud5e4\ub4dc\uc0f7 \uc0dd\uc131\uc5d0\ub9cc \uc0ac\uc6a9\ub418\uba70, \ucc98\ub9ac \ud6c4 \uc989\uc2dc \uc0ad\uc81c\ub429\ub2c8\ub2e4."}
+          {"업로드한 사진은 헤드샷 생성에만 사용되며, 처리 후 즉시 삭제됩니다."}
         </p>
       </div>
 
@@ -780,7 +779,7 @@ export default function UploadCard() {
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 space-y-6 animate-in">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">
-                {"\ubb34\ub8cc \uccb4\ud5d8 2\ud68c\ub97c \ubaa8\ub450 \uc0ac\uc6a9\ud588\uc5b4\uc694"}
+                {"무료 체험 2회를 모두 사용했어요"}
               </h3>
               <button
                 type="button"
@@ -795,7 +794,7 @@ export default function UploadCard() {
             </div>
 
             <p className="text-sm text-slate-500 leading-relaxed">
-              {"\ubb34\ub8cc \uccb4\ud5d8"} {DEMO_LIMIT}{"\ud68c\uac00 \ubaa8\ub450 \uc18c\uc9c4\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \uc544\ub798 \uc635\uc158 \uc911 \ud558\ub098\ub97c \uc120\ud0dd\ud574 \uc8fc\uc138\uc694."}
+              {"무료 체험"} {DEMO_LIMIT}{"회가 모두 소진되었습니다. 아래 옵션 중 하나를 선택해 주세요."}
             </p>
 
             {/* Option A - BYOK */}
@@ -809,10 +808,10 @@ export default function UploadCard() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-slate-900">
-                    {"\ub0b4 API \ud0a4\ub85c \uacc4\uc18d \uc0ac\uc6a9\ud588\uae30"}
+                    {"내 API 키로 계속 사용하기"}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {"Google Gemini API \ud0a4 \uc785\ub825"}
+                    {"Google Gemini API 키 입력"}
                   </p>
                 </div>
               </div>
@@ -824,7 +823,7 @@ export default function UploadCard() {
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                     <span className="text-sm text-emerald-700 font-medium">
-                      {"API \ud0a4\uac00 \uc800\uc7a5\ub418\uc5c8\uc2b5\ub2c8\ub2e4"}
+                      {"API 키가 저장되었습니다"}
                     </span>
                   </div>
                   <button
@@ -832,7 +831,7 @@ export default function UploadCard() {
                     onClick={handleClearByok}
                     className="text-xs text-slate-400 hover:text-red-500 transition-colors"
                   >
-                    {"\ud0a4 \uc0ad\uc81c"}
+                    {"키 삭제"}
                   </button>
                 </div>
               ) : (
@@ -841,7 +840,7 @@ export default function UploadCard() {
                     type="password"
                     value={byokInput}
                     onChange={(e) => setByokInput(e.target.value)}
-                    placeholder="AIzaSy... \ub610\ub294 Gemini API \ud0a4"
+                    placeholder="AIzaSy... 또는 Gemini API 키"
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-all placeholder:text-slate-300"
                   />
                   <button
@@ -854,13 +853,13 @@ export default function UploadCard() {
                         : "bg-slate-100 text-slate-300 cursor-not-allowed"
                     }`}
                   >
-                    {"\ud0a4 \uc800\uc7a5\ud558\uace0 \uacc4\uc18d\ud558\uae30"}
+                    {"키 저장하고 계속하기"}
                   </button>
                 </div>
               )}
 
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                {"\ud83d\udca1 \uc785\ub825\ud558\uc2e0 \ud0a4\ub294 \ube0c\ub77c\uc6b0\uc800\uc5d0\ub9cc \uc800\uc7a5\ub418\uba70, \ubcf8\uc778\uc758 \uc694\uccad\uc5d0\ub9cc \uc0ac\uc6a9\ub429\ub2c8\ub2e4. \uc11c\ubc84\uc5d0 \uae30\ub85d\ub418\uac70\ub098 \uc800\uc7a5\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4."}
+                {"💡 입력하신 키는 브라우저에만 저장되며, 본인의 요청에만 사용됩니다. 서버에 기록되거나 저장되지 않습니다."}
               </p>
             </div>
 
@@ -874,7 +873,7 @@ export default function UploadCard() {
                   </svg>
                 </div>
                 <p className="text-sm font-bold text-slate-400">
-                  {"\uc815\uc2dd \ubc84\uc804"}
+                  {"정식 버전"}
                 </p>
               </div>
               <button
@@ -882,7 +881,7 @@ export default function UploadCard() {
                 disabled
                 className="w-full py-3 rounded-xl text-sm font-semibold bg-slate-100 text-slate-300 cursor-not-allowed"
               >
-                {"\uc815\uc2dd \ubc84\uc804 \uc900\ube44 \uc911"}
+                {"정식 버전 준비 중"}
               </button>
             </div>
           </div>
