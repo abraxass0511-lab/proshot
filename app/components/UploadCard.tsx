@@ -2,21 +2,22 @@
 
 import { useState, useRef, useCallback, useEffect, type ChangeEvent } from "react";
 import { ImageSlider } from "./ImageSlider";
+import {
+  CATEGORIES,
+  STYLES,
+  BG_COLORS,
+  getStyle,
+  type CategoryId,
+  type BgColor,
+  type StyleDef,
+} from "@/app/lib/styles";
+import { PRINT_SIZES, generatePhotoSheet, type PrintSize } from "@/app/lib/photoSheet";
 
 /* ------------------------------------------------------------------ */
-/*  Types & Sample Data                                                */
+/*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type StyleOption = "corporate" | "studio" | "outdoor";
 type ModelOption = "compare" | "gemini-3.1-flash-image" | "gemini-2.0-flash-exp";
-
-interface StyleCard {
-  value: StyleOption;
-  label: string;
-  desc: string;
-  filter: string;
-  icon: React.ReactNode;
-}
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8 MB
 const DEMO_LIMIT = 2;
@@ -29,64 +30,20 @@ const SAMPLE_BEFORE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/200
 const SAMPLE_AFTER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='800' viewBox='0 0 600 800'><defs><linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%234f46e5'/><stop offset='100%25' stop-color='%237c3aed'/></linearGradient></defs><rect width='600' height='800' fill='url(%23bg)'/><circle cx='300' cy='320' r='140' fill='%23818cf8' opacity='0.4'/><circle cx='300' cy='280' r='90' fill='%23fecdd3'/><path d='M150,750 C150,500 450,500 450,750 Z' fill='%231e1b4b'/><text x='300' y='720' font-family='sans-serif' font-size='26' font-weight='bold' fill='%23ffffff' text-anchor='middle'>✨ AI 프로필 헤드샷</text></svg>";
 
 /* ------------------------------------------------------------------ */
-/*  Style cards data                                                   */
-/* ------------------------------------------------------------------ */
-
-const STYLE_OPTIONS: StyleCard[] = [
-  {
-    value: "corporate",
-    label: "\ube44\uc988\ub2c8\uc2a4 \uc815\uc7a5",
-    desc: "\uc804\ubb38\uc801\uc778 \ud504\ub85c\ud544",
-    filter: "contrast(1.2) brightness(1.08) saturate(0.9) hue-rotate(-10deg)",
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-  },
-  {
-    value: "studio",
-    label: "\uc2a4\ud29c\ub514\uc624",
-    desc: "\uae54\ub054\ud55c \ubc30\uacbd",
-    filter: "brightness(1.15) contrast(1.1) saturate(1.1)",
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-        <circle cx="12" cy="13" r="4" />
-      </svg>
-    ),
-  },
-  {
-    value: "outdoor",
-    label: "\uc57c\uc678 \uc790\uc5f0\uad11",
-    desc: "\ub530\ub73b\ud55c \ubd84\uc704\uae30",
-    filter: "sepia(0.2) contrast(1.12) brightness(1.1) saturate(1.3)",
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="5" />
-        <line x1="12" y1="1" x2="12" y2="3" />
-        <line x1="12" y1="21" x2="12" y2="23" />
-        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-        <line x1="1" y1="12" x2="3" y2="12" />
-        <line x1="21" y1="12" x2="23" y2="12" />
-        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-      </svg>
-    ),
-  },
-];
-
-/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
 export default function UploadCard() {
   const [preview, setPreview] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("");
-  const [style, setStyle] = useState<StyleOption>("corporate");
+
+  // Category & Style state
+  const [activeCategory, setActiveCategory] = useState<CategoryId>("business");
+  const [selectedStyleId, setSelectedStyleId] = useState<string>("corporate");
+  const [selectedBgColor, setSelectedBgColor] = useState<BgColor>("white");
+  const [customPrompt, setCustomPrompt] = useState<string>("");
+
+  // Model & Async states
   const [targetModel, setTargetModel] = useState<ModelOption>("compare");
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -95,6 +52,12 @@ export default function UploadCard() {
   // Result states for independent model outputs
   const [resultUrl31, setResultUrl31] = useState<string | null>(null);
   const [resultUrl20, setResultUrl20] = useState<string | null>(null);
+
+  // Print Sheet Modal state
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printImageTarget, setPrintImageTarget] = useState<string | null>(null);
+  const [selectedPrintSize, setSelectedPrintSize] = useState<PrintSize>(PRINT_SIZES[1]); // 증명사진 default
+  const [isSheetGenerating, setIsSheetGenerating] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -129,7 +92,7 @@ export default function UploadCard() {
     setError(null);
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
-      setError("\uc9c0\uc6d0\ub418\uc9c0 \uc54a\ub294 \ud30c\uc77c \ud615\uc2dd\uc785\ub2c8\ub2e4. JPG, PNG, WebP \uc774\ubbf8\uc9c0\ub9cc \uc5c5\ub85c\ub4dc \uac00\ub2a5\ud569\ub2c8\ub2e4.");
+      setError("지원되지 않는 파일 형식입니다. JPG, PNG, WebP 이미지만 업로드 가능합니다.");
       setPreview(null);
       setFileName("");
       return;
@@ -137,7 +100,7 @@ export default function UploadCard() {
 
     if (file.size > MAX_FILE_SIZE) {
       const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      setError(`\ud30c\uc77c \ud06c\uae30\uac00 \ub108\ubb34 \ud07d\ub2c8\ub2e4 (${sizeMB}MB). 8MB \uc774\ud558\uc758 \uc774\ubbf8\uc9c0\ub97c \uc120\ud0dd\ud574 \uc8fc\uc138\uc694.`);
+      setError(`파일 크기가 너무 큽니다 (${sizeMB}MB). 8MB 이하의 이미지를 선택해 주세요.`);
       setPreview(null);
       setFileName("");
       return;
@@ -149,7 +112,7 @@ export default function UploadCard() {
       setFileName(file.name);
     };
     reader.onerror = () => {
-      setError("\ud30c\uc77c\uc744 \uc77d\ub294 \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \uc2dc\ub3c4\ud574 \uc8fc\uc138\uc694.");
+      setError("파일을 읽는 중 오류가 발생했습니다. 다시 시도해 주세요.");
     };
     reader.readAsDataURL(file);
   }, []);
@@ -218,6 +181,11 @@ export default function UploadCard() {
   const handleGenerateModel = async (modelToRun: ModelOption) => {
     if (!isValid || isLoading || !preview) return;
 
+    if (activeCategory === "custom" && !customPrompt.trim()) {
+      setError("커스텀 스타일 설명을 입력해 주세요.");
+      return;
+    }
+
     const isByok = byokKey.length > 0;
 
     if (!isByok && usesLeft <= 0) {
@@ -242,15 +210,17 @@ export default function UploadCard() {
         headers,
         body: JSON.stringify({
           imageBase64: preview,
-          style,
+          style: activeCategory === "custom" ? "custom" : selectedStyleId,
           targetModel: modelToRun,
+          bgColor: selectedBgColor,
+          customPrompt,
         }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "\ud5e4\ub4dc\uc0f7 \uc0dd\uc131 \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4.");
+        setError(data.error || "헤드샷 생성 중 오류가 발생했습니다.");
         return;
       }
 
@@ -264,7 +234,7 @@ export default function UploadCard() {
       } else if (data.imageUrl) {
         setResultUrl31(data.imageUrl);
       } else {
-        setError("\uacb0\uacfc \uc774\ubbf8\uc9c0\ub97c \ubc1b\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \uc2dc\ub3c4\ud574 \uc8fc\uc138\uc694.");
+        setError("결과 이미지를 받지 못했습니다. 다시 시도해 주세요.");
         return;
       }
 
@@ -278,7 +248,7 @@ export default function UploadCard() {
         } catch { /* ignore */ }
       }
     } catch {
-      setError("\ub124\ud2b8\uc6cc\ud06c \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4. \uc778\ud130\ub137 \uc5f0\uacb0\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694.");
+      setError("네트워크 오류가 발생했습니다. 인터넷 연결을 확인해 주세요.");
     } finally {
       setIsLoading(false);
     }
@@ -296,7 +266,7 @@ export default function UploadCard() {
     }
   }, [error]);
 
-  /* ---- download helper ---- */
+  /* ---- download helpers ---- */
 
   const handleDownloadImage = (url: string, modelLabel: string) => {
     const link = document.createElement("a");
@@ -307,6 +277,25 @@ export default function UploadCard() {
     document.body.removeChild(link);
   };
 
+  const handleDownloadPrintSheet = async () => {
+    if (!printImageTarget) return;
+    setIsSheetGenerating(true);
+    try {
+      const { dataUrl, count } = await generatePhotoSheet(printImageTarget, selectedPrintSize);
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `proshot-print-sheet-${selectedPrintSize.id}-${count}pcs.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setShowPrintModal(false);
+    } catch (e) {
+      setError("인쇄용 시트를 생성하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setIsSheetGenerating(false);
+    }
+  };
+
   /* ---- action handlers ---- */
 
   const handleResetResults = () => {
@@ -315,7 +304,8 @@ export default function UploadCard() {
     setError(null);
   };
 
-  const selectedStyleObj = STYLE_OPTIONS.find((s) => s.value === style) || STYLE_OPTIONS[0];
+  const currentStyleObj = getStyle(selectedStyleId) || STYLES[0];
+  const filteredStyles = STYLES.filter((s) => s.category === activeCategory);
 
   /* ---- render ---- */
 
@@ -349,12 +339,12 @@ export default function UploadCard() {
         {/* Header */}
         <div className="text-center">
           <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mb-1">
-            {hasResults ? "\u2728 \ud5e4\ub4dc\uc0f7 \uc644\uc131!" : "\uc140\uce74\ub97c \uc5c5\ub85c\ub4dc\ud558\uc138\uc694"}
+            {hasResults ? "✨ AI 프로필 완성과 비교" : "셀카를 업로드하세요"}
           </h3>
           <p className="text-sm text-slate-400">
             {hasResults
-              ? "\uac01 \ubaa8\ub378\ubcc4 \uc0dd\uc131 \uacb0\uacfc\ub97c \ud655\uc778\ud558\uace0 \ub2e4\uc6b4\ub85c\ub4dc\ud558\uc138\uc694"
-              : "\uc815\uba74 \uc140\uce74 \ud55c \uc7a5\uc774\uba74 \ucda9\ubd84\ud569\ub2c8\ub2e4"}
+              ? "각 모델별 생성 결과를 확인하고 고화질 및 인쇄용 분할 시트로 저장하세요"
+              : "정면 셀카 한 장이면 스튜디오급 사진이 완성됩니다"}
           </p>
         </div>
 
@@ -430,18 +420,30 @@ export default function UploadCard() {
                   )}
                 </div>
                 {resultUrl31 && (
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadImage(resultUrl31, "gemini-3.1")}
-                    className="w-full py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-md flex items-center justify-center gap-1.5"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    {"Gemini 3.1 PNG 다운로드"}
-                  </button>
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadImage(resultUrl31, "gemini-3.1")}
+                      className="w-full py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-md flex items-center justify-center gap-1.5"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      {"Gemini 3.1 PNG 다운로드"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrintImageTarget(resultUrl31);
+                        setShowPrintModal(true);
+                      }}
+                      className="w-full py-2 rounded-xl text-xs font-semibold border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      {"🖨️ 4×6 증명사진 인화 시트 다운로드"}
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -474,18 +476,30 @@ export default function UploadCard() {
                   )}
                 </div>
                 {resultUrl20 && (
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadImage(resultUrl20, "gemini-2.0")}
-                    className="w-full py-2.5 rounded-xl text-xs font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    {"Gemini 2.0 PNG 다운로드"}
-                  </button>
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadImage(resultUrl20, "gemini-2.0")}
+                      className="w-full py-2.5 rounded-xl text-xs font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      {"Gemini 2.0 PNG 다운로드"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrintImageTarget(resultUrl20);
+                        setShowPrintModal(true);
+                      }}
+                      className="w-full py-2 rounded-xl text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      {"🖨️ 4×6 증명사진 인화 시트 다운로드"}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -586,9 +600,9 @@ export default function UploadCard() {
                 <ImageSlider
                   beforeImage={preview || SAMPLE_BEFORE}
                   afterImage={preview || SAMPLE_AFTER}
-                  afterFilter={preview ? selectedStyleObj.filter : undefined}
+                  afterFilter={preview ? currentStyleObj.prompt : undefined}
                   beforeLabel={preview ? "원본 셀카" : "샘플 셀카"}
-                  afterLabel={preview ? `${selectedStyleObj.label} 완성 예시` : "✨ AI 헤드샷 샘플"}
+                  afterLabel={preview ? `${currentStyleObj.label} 완성 예시` : "✨ AI 헤드샷 샘플"}
                 />
               </div>
 
@@ -630,7 +644,7 @@ export default function UploadCard() {
               />
             </div>
 
-            {/* Model Selection Tabs */}
+            {/* AI Model Selection Tabs */}
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-slate-700">
                 {"AI 모델 선택"}
@@ -666,51 +680,134 @@ export default function UploadCard() {
               </div>
             </div>
 
-            {/* Style picker */}
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-700">
-                {"프로필 스타일 선택"}
-              </label>
-              <div className="grid grid-cols-3 gap-3">
-                {STYLE_OPTIONS.map((opt) => {
-                  const isSelected = style === opt.value;
+            {/* Category selection tabs (Business, ID/Passport, Fun/Concept, Custom) */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-semibold text-slate-700">
+                  {"프로필 스타일 테마"}
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100 p-1.5 rounded-2xl">
+                {CATEGORIES.map((cat) => {
+                  const isSel = activeCategory === cat.id;
                   return (
                     <button
-                      key={opt.value}
+                      key={cat.id}
                       type="button"
-                      onClick={() => setStyle(opt.value)}
+                      onClick={() => {
+                        setActiveCategory(cat.id);
+                        if (cat.id !== "custom") {
+                          const firstInCat = STYLES.find((s) => s.category === cat.id);
+                          if (firstInCat) setSelectedStyleId(firstInCat.id);
+                        }
+                      }}
                       className={`
-                        relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2
-                        transition-all duration-200 text-center
+                        py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5
                         ${
-                          isSelected
-                            ? "border-indigo-500 bg-indigo-50/80 shadow-md shadow-indigo-100/50"
-                            : "border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm"
+                          isSel
+                            ? "bg-white text-indigo-700 shadow-md shadow-slate-200/50"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-white/40"
                         }
                       `}
                     >
-                      {isSelected && (
-                        <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center shadow-sm">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        </div>
-                      )}
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors duration-200 ${isSelected ? "bg-indigo-500 text-white" : "bg-slate-100 text-slate-400"}`}>
-                        {opt.icon}
-                      </div>
-                      <div>
-                        <p className={`text-xs font-bold leading-tight ${isSelected ? "text-indigo-700" : "text-slate-700"}`}>
-                          {opt.label}
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">
-                          {opt.desc}
-                        </p>
-                      </div>
+                      <span>{cat.emoji}</span>
+                      <span>{cat.label}</span>
                     </button>
                   );
                 })}
               </div>
+
+              {/* Custom Prompt Input */}
+              {activeCategory === "custom" ? (
+                <div className="space-y-2 animate-in">
+                  <label className="block text-xs font-semibold text-slate-600">
+                    {"원하는 연출 및 스타일을 자유롭게 설명해주세요"}
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="예: 해질녘 해변 배경에서 빈티지 가죽 자켓을 입은 멋진 포트레이트"
+                    className="w-full p-4 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 transition-all placeholder:text-slate-300"
+                  />
+                </div>
+              ) : (
+                /* Preset Style Options Grid */
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 animate-in">
+                  {filteredStyles.map((opt) => {
+                    const isSelected = selectedStyleId === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setSelectedStyleId(opt.id)}
+                        className={`
+                          relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2
+                          transition-all duration-200 text-center
+                          ${
+                            isSelected
+                              ? "border-indigo-500 bg-indigo-50/80 shadow-md shadow-indigo-100/50"
+                              : "border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm"
+                          }
+                        `}
+                      >
+                        {isSelected && (
+                          <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center shadow-sm">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          </div>
+                        )}
+                        <span className="text-2xl mb-1">{opt.emoji}</span>
+                        <div>
+                          <p className={`text-xs font-bold leading-tight ${isSelected ? "text-indigo-700" : "text-slate-700"}`}>
+                            {opt.label}
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                            {opt.description}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Background Color Selector (shown for ID photo styles) */}
+              {activeCategory === "id" && currentStyleObj?.supportsBgColor && (
+                <div className="space-y-2 pt-2 animate-in">
+                  <label className="block text-xs font-semibold text-slate-600">
+                    {"증명사진 배경색 선택"}
+                  </label>
+                  <div className="flex gap-3">
+                    {BG_COLORS.map((bg) => {
+                      const isSel = selectedBgColor === bg.id;
+                      return (
+                        <button
+                          key={bg.id}
+                          type="button"
+                          onClick={() => setSelectedBgColor(bg.id)}
+                          className={`
+                            flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-all
+                            ${
+                              isSel
+                                ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                            }
+                          `}
+                        >
+                          <span
+                            className="w-4 h-4 rounded-full border border-slate-300 shadow-inner"
+                            style={{ backgroundColor: bg.swatch }}
+                          />
+                          <span>{bg.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Submit button */}
@@ -768,6 +865,109 @@ export default function UploadCard() {
           {"업로드한 사진은 헤드샷 생성에만 사용되며, 처리 후 즉시 삭제됩니다."}
         </p>
       </div>
+
+      {/* ══════════════════════════════════════════════════════════ */}
+      {/*  MODAL: Print Sheet Generator (4x6 photo paper tiling)    */}
+      {/* ══════════════════════════════════════════════════════════ */}
+      {showPrintModal && printImageTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowPrintModal(false);
+          }}
+        >
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-8 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <span>🖨️</span> 4×6 인화용 시트 다운로드
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(false)}
+                className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                4×6 인치 표준 인화지 규격에 300DPI 고화질 자르기 안내선과 함께 배치된 분할 시트를 생성합니다. 인쇄소나 사진 인화 키오스크에서 출력하세요.
+              </p>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-700">인쇄 규격 선택</label>
+                <div className="space-y-2">
+                  {PRINT_SIZES.map((size) => {
+                    const isSel = selectedPrintSize.id === size.id;
+                    return (
+                      <button
+                        key={size.id}
+                        type="button"
+                        onClick={() => setSelectedPrintSize(size)}
+                        className={`
+                          w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all
+                          ${
+                            isSel
+                              ? "border-indigo-500 bg-indigo-50/70 shadow-sm"
+                              : "border-slate-200 hover:border-slate-300 bg-white"
+                          }
+                        `}
+                      >
+                        <div>
+                          <p className={`text-sm font-bold ${isSel ? "text-indigo-900" : "text-slate-800"}`}>
+                            {size.label}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">{size.note}</p>
+                        </div>
+                        {isSel && (
+                          <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-white">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(false)}
+                className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPrintSheet}
+                disabled={isSheetGenerating}
+                className="flex-1 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2"
+              >
+                {isSheetGenerating ? (
+                  <span>생성 중...</span>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    <span>인화 시트 다운로드</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Demo limit modal */}
       {showLimitModal && (

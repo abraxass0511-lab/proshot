@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
+import { buildPrompt, type BgColor } from "@/app/lib/styles";
 
 /* ------------------------------------------------------------------ */
 /*  Runtime config                                                     */
@@ -9,26 +10,13 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /* ------------------------------------------------------------------ */
-/*  Style → English prompt map                                         */
-/* ------------------------------------------------------------------ */
-
-const STYLE_PROMPTS: Record<string, string> = {
-  corporate:
-    "Transform this selfie into a professional corporate headshot portrait. The person should be wearing a formal business suit with a clean solid neutral background. Apply professional studio lighting with sharp focus. The expression should be confident and approachable. Make it look like a high-end LinkedIn profile photo. Keep the person's face, features, and identity exactly the same.",
-  studio:
-    "Transform this selfie into a professional studio headshot portrait. Use a clean white or light grey background with soft diffused studio lighting. Sharp focus with natural, relaxed expression. Make it look like high-end professional photography. Keep the person's face, features, and identity exactly the same.",
-  outdoor:
-    "Transform this selfie into a professional outdoor headshot portrait. Use natural warm sunlight with a soft bokeh green nature background, as if shot during golden hour. The expression should be friendly and approachable, like editorial photography. Keep the person's face, features, and identity exactly the same.",
-};
-
-/* ------------------------------------------------------------------ */
 /*  Helper: Call Gemini model for image generation                     */
 /* ------------------------------------------------------------------ */
 
 async function generateWithModel(
   ai: GoogleGenAI,
   modelName: string,
-  style: string,
+  promptText: string,
   mimeType: string,
   base64Data: string,
 ): Promise<string> {
@@ -38,7 +26,7 @@ async function generateWithModel(
       {
         role: "user",
         parts: [
-          { text: STYLE_PROMPTS[style] },
+          { text: promptText },
           {
             inlineData: {
               mimeType,
@@ -92,10 +80,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { imageBase64, style, targetModel = "compare" } = body as {
+    const {
+      imageBase64,
+      style = "corporate",
+      targetModel = "compare",
+      bgColor = "white",
+      customPrompt = "",
+    } = body as {
       imageBase64?: string;
       style?: string;
       targetModel?: string; // "gemini-3.1-flash-image" | "gemini-2.0-flash-exp" | "compare"
+      bgColor?: BgColor;
+      customPrompt?: string;
     };
 
     if (!imageBase64 || typeof imageBase64 !== "string") {
@@ -105,12 +101,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!style || !STYLE_PROMPTS[style]) {
-      return NextResponse.json(
-        { error: "유효한 스타일을 선택해 주세요." },
-        { status: 400 },
-      );
-    }
+    /* ---- Build final English prompt ---- */
+    const finalPrompt = buildPrompt({
+      styleId: style,
+      bgColor,
+      customPrompt,
+    });
 
     /* ---- Resolve API key: BYOK header takes priority ---- */
     const byokKey = req.headers.get("x-gemini-key");
@@ -135,8 +131,8 @@ export async function POST(req: NextRequest) {
     if (targetModel === "compare") {
       /* ---- Compare mode: run both models in parallel ---- */
       const [res31, res20] = await Promise.allSettled([
-        generateWithModel(ai, "gemini-3.1-flash-image", style, mimeType, base64Data),
-        generateWithModel(ai, "gemini-2.0-flash-exp", style, mimeType, base64Data),
+        generateWithModel(ai, "gemini-3.1-flash-image", finalPrompt, mimeType, base64Data),
+        generateWithModel(ai, "gemini-2.0-flash-exp", finalPrompt, mimeType, base64Data),
       ]);
 
       const imageUrl31 = res31.status === "fulfilled" ? res31.value : null;
@@ -163,7 +159,7 @@ export async function POST(req: NextRequest) {
         ? "gemini-2.0-flash-exp"
         : "gemini-3.1-flash-image";
 
-    const imageUrl = await generateWithModel(ai, modelToUse, style, mimeType, base64Data);
+    const imageUrl = await generateWithModel(ai, modelToUse, finalPrompt, mimeType, base64Data);
 
     return NextResponse.json({ imageUrl, selectedModel: modelToUse });
   } catch (err: unknown) {
