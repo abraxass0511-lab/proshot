@@ -15,10 +15,9 @@ export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
   const pw = req.headers.get("x-access-password") || req.headers.get("x-admin-password");
-  const serverPw = process.env.ADMIN_PASSWORD || process.env.ACCESS_PASSWORD;
+  const serverPw = process.env.ADMIN_PASSWORD || process.env.ACCESS_PASSWORD || "160489";
 
-  // If no password is set on server, allow access. If password is set, verify it.
-  if (serverPw && (!pw || pw !== serverPw)) {
+  if (!pw || pw !== serverPw) {
     return NextResponse.json({ authorized: false }, { status: 401 });
   }
 
@@ -127,9 +126,9 @@ export async function POST(req: NextRequest) {
     /* ---- Resolve API key: BYOK header takes priority ---- */
     const byokKey = req.headers.get("x-gemini-key");
     const accessPw = req.headers.get("x-access-password") || req.headers.get("x-admin-password");
-    const serverPw = process.env.ADMIN_PASSWORD || process.env.ACCESS_PASSWORD;
+    const serverPw = process.env.ADMIN_PASSWORD || process.env.ACCESS_PASSWORD || "160489";
 
-    if (serverPw && !byokKey && accessPw !== serverPw) {
+    if (!byokKey && accessPw !== serverPw) {
       return NextResponse.json(
         { error: "접근 비밀번호가 올바르지 않거나 만료되었습니다." },
         { status: 401 },
