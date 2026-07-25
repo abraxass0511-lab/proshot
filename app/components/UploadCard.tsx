@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, type ChangeEvent } from "react";
+import { ImageSlider } from "./ImageSlider";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -357,9 +358,31 @@ export default function UploadCard() {
           </p>
         </div>
 
-        {/* STATE: Result - Comparison or Single View */}
+        {/* STATE: Result - Interactive Slider + Cards */}
         {hasResults && preview ? (
-          <div className="space-y-6 animate-reveal">
+          <div className="space-y-8 animate-reveal">
+            {/* ── Interactive Before/After Drag Slider ── */}
+            <div className="space-y-2 max-w-md mx-auto">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6" />
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                  {"\ub4dc\ub798\uadf8\ud558\uc5ec Before / After \ube44\uad50"}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {"\uc0ac\uc6b9\uc790 \uc9c1\uc124 \uc2ac\ub77c\uc774\ub354"}
+                </span>
+              </div>
+              <ImageSlider
+                beforeImage={preview}
+                afterImage={resultUrl31 || resultUrl20 || singleResultUrl || ""}
+                beforeLabel={"\uc6d0\ubcf8 \uc140\uce74"}
+                afterLabel={resultUrl31 ? "Gemini 3.1 AI \ud5e4\ub4dc\uc0f7" : "AI \ud5e4\ub4dc\uc0f7"}
+              />
+            </div>
+
             {/* Grid layout depending on comparison or single mode */}
             {resultUrl31 && resultUrl20 ? (
               /* ── 3-Column Comparison View ── */
